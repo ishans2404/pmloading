@@ -78,6 +78,18 @@ export async function fetchPlateInfo(plateNo) {
   }
 }
 
+export async function fetchPlateInfoSearch(plateNo) {
+  try {
+    const res = await fetch(`${PROXY}/plateInfoSearch?plateNo=${encodeURIComponent(plateNo)}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    return data || null
+  } catch (err) {
+    console.error('fetchPlateInfoSearch failed:', err.message)
+    throw err
+  }
+}
+
 // HOME / RAKES LIST
 export async function fetchRakesList() {
   if (rakesListInFlight) return rakesListInFlight
@@ -150,6 +162,18 @@ export async function fetchLoadedDetails(rakeId) {
     return await res.json()
   } catch (err) {
     console.error('fetchLoadedDetails failed:', err.message)
+    throw err
+  }
+}
+
+// REPORT DETAILS
+export async function fetchReportDetails(rakeId) {
+  try {
+    const res = await fetch(`${PROXY}/getReportDet?rakeid=${encodeURIComponent(rakeId)}`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return await res.json()
+  } catch (err) {
+    console.error('fetchReportDetails failed:', err.message)
     throw err
   }
 }

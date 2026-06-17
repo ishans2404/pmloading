@@ -175,6 +175,13 @@ async def plate_info(plateNo: str = Query(...)):
     return None
 
 
+@app.get("/api/plateInfoSearch")
+async def plate_info_search(plateNo: str = Query(...)):
+    p_str = str(plateNo)
+    raw = await _upstream_get("plateInfo_search.jsp", {"plateNo": p_str})
+    return raw if isinstance(raw, list) else []
+
+
 @app.get("/api/getRakeidDet")
 async def get_rakeid_det(rakeid: Optional[str] = None):
     params = {"rakeid": rakeid} if rakeid else None
@@ -214,6 +221,12 @@ async def post_plates_data(status: int = Query(...), jsonB64: str = Query(...)):
 @app.get("/api/getLoadedDet")
 async def get_loaded_det(rakeid: str = Query(...)):
     raw = await _upstream_get("getLoadedDet.jsp", {"rakeid": rakeid})
+    return raw
+
+
+@app.get("/api/getReportDet")
+async def get_report_det(rakeid: str = Query(...)):
+    raw = await _upstream_get("getReportDet.jsp", {"rakeid": rakeid})
     return raw
 
 

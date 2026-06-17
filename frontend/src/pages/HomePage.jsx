@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell.jsx'
-import { fetchRakesList, fetchLoadingReport, fetchWagonsByRake, updateTramsId, fetchTramsRakeids, fetchLoadedDetails } from '../api/index.js'
+import { fetchRakesList, fetchLoadingReport, fetchWagonsByRake, updateTramsId, fetchTramsRakeids, fetchReportDetails } from '../api/index.js'
 import { generateReportHomepage } from '../utils/export.js'
 import { useToast } from '../context/ToastContext.jsx'
 import Modal from '../components/shared/Modal.jsx'
@@ -167,13 +167,13 @@ export default function HomePage() {
       duration: 2200,
     })
     // Fire-and-forget: runs in background, user can continue working
-    fetchLoadedDetails(rake.rakeId)
-      .then(loadedData => {
-        if (!Array.isArray(loadedData) || loadedData.length === 0) {
-          toastCtx.warning('No loaded plate data found for this rake.')
+    fetchReportDetails(rake.rakeId)
+      .then(reportData => {
+        if (!Array.isArray(reportData) || reportData.length === 0) {
+          toastCtx.warning('No report data found for this rake.')
           return
         }
-        return generateReportHomepage(rake.rakeId, loadedData)
+        return generateReportHomepage(rake.rakeId, reportData)
       })
       .catch(err => {
         toastCtx.error('Failed to generate report: ' + (err?.message || 'Unknown error'))

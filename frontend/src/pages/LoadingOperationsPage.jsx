@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell.jsx'
 import Modal from '../components/shared/Modal.jsx'
-import { fetchRakeInfo, fetchLoadingReport, fetchPlateInfo, submitWagonLoad, fetchLoadedDetails, fetchWagonsByRake, publishBalUpdate, createBalUpdateStream, publishPlateLock, createPlateLockStream } from '../api/index.js'
+import { fetchRakeInfo, fetchLoadingReport, fetchPlateInfo, fetchPlateInfoSearch, submitWagonLoad, fetchLoadedDetails, fetchWagonsByRake, publishBalUpdate, createBalUpdateStream, publishPlateLock, createPlateLockStream } from '../api/index.js'
 import { generateLoadingPdf, generateProgressReport, buildWagonPayloads, submitWagonRequests } from '../utils/export.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
@@ -850,6 +850,9 @@ export default function LoadingOperationsPage() {
     const q = upper.trim()
     if (!q || !activeCode || !session) return
 
+    // Only fire API search when input is at least 7 characters long
+    if (q.length < 7) return
+
     quickDebounceRef.current = setTimeout(async () => {
       const cons = session.consignees.find(c => c.consigneeCode === activeCode)
       if (!cons) return
@@ -868,9 +871,9 @@ export default function LoadingOperationsPage() {
 
       setIsFetchingPlate(true)
       try {
-        const info = await fetchPlateInfo(q)
-        if (info) {
-          setQuickResult({ type: 'api', apiInfo: info })
+        const results = await fetchPlateInfoSearch(q)
+        if (results && results.length > 0) {
+          setQuickResult({ type: 'api', apiInfo: results })
         } else {
           setQuickError(`Plate "${q}" not found in list or system.`)
         }
@@ -882,7 +885,7 @@ export default function LoadingOperationsPage() {
     }, 550)
   }
 
-  function handleQuickLoad() {
+  function handleQuickLoad(apiItem) {
     if (!quickResult) return
 
     if (quickResult.type === 'list') {
@@ -897,53 +900,84 @@ export default function LoadingOperationsPage() {
       }
       togglePlate(activeCode, plate.plateNo)
       toast.success({ message: `${plate.plateNo} → Loaded`, duration: 1800 })
-    } else {
-      if (!activeWagon && wagons.length > 0) {
-        toast.warning('Select a wagon before loading.')
+      setQuickEntry('')
+      setQuickResult(null)
+      setQuickError('')
+      if (!isCoarsePointer()) quickEntryRef.current?.focus()
+      return
+    }
+
+    // API search result — use the selected item or fall back to first result
+    if (!activeWagon && wagons.length > 0) {
+      toast.warning('Select a wagon before loading.')
+      return
+    }
+
+    const apiInfo = apiItem || (Array.isArray(quickResult.apiInfo) ? quickResult.apiInfo[0] : quickResult.apiInfo)
+    if (!apiInfo) return
+
+    // Prevent duplicate loading: check if plate already exists in this consignee
+    const apiPlateNo = apiInfo.PLATE_NO || quickEntry.trim()
+    if (apiPlateNo) {
+      const existingPlate = session.consignees
+        .find(c => c.consigneeCode === activeCode)
+        ?.plates.find(p => p.plateNo === apiPlateNo)
+      if (existingPlate?.loaded) {
+        setQuickError(`${apiPlateNo} is already marked as loaded.`)
         return
       }
-      const { apiInfo } = quickResult
-      const now = new Date().toISOString()
-      const inferredPlateType = (() => {
-        const raw = String(apiInfo.MECH_RESULT || apiInfo.PLATE_TYPE || '').toUpperCase()
-        return ['OK', 'RA', 'DIV', 'MTI', 'TPI'].includes(raw) ? raw : 'OK'
-      })()
-      const newPlate = {
-        plateNo:  apiInfo.PLATE_NO  || quickEntry.trim(),
-        heatNo:   apiInfo.HEAT_NO   || '',
-        plateType: inferredPlateType,
-        ordNo:    apiInfo.ORD_NO    || '',
-        grade:    apiInfo.GRADE     || '',
-        tdc:      apiInfo.TDC       || '',
-        colourCd: apiInfo.COLOUR_CD || '',
-        ordSize:  apiInfo.PLATE_SIZE || '',
-        pcWgt:    apiInfo.WGT ? parseFloat(apiInfo.WGT) : null,
-        loaded:   true,
-        loadedAt: now,
-        wagonNo:  activeWagon,
-        _manual:  true,
+      if (existingPlate && !existingPlate.loaded) {
+        // Plate exists but unloaded — toggle it back to loaded
+        togglePlate(activeCode, apiPlateNo)
+        toast.success({ message: `${apiPlateNo} → Loaded`, duration: 1800 })
+        setQuickEntry('')
+        setQuickResult(null)
+        setQuickError('')
+        if (!isCoarsePointer()) quickEntryRef.current?.focus()
+        return
       }
-      updateSession(prev => ({
-        ...prev,
-        consignees: prev.consignees.map(c =>
-          c.consigneeCode === activeCode
-            ? {
-              ...c,
-              plates: [...c.plates, newPlate],
-              okPlateCount: inferredPlateType === 'OK' ? (c.okPlateCount ?? 0) + 1 : (c.okPlateCount ?? 0),
-            }
-            : c
-        ),
-        loadingLog: prev.loadingLog.concat({
-          timestamp: now,
-          plateNo:   newPlate.plateNo,
-          consigneeCode: activeCode,
-          wagonNo:   activeWagon,
-          action:    'LOADED',
-        }),
-      }))
-      toast.success({ message: `${newPlate.plateNo} → Loaded (added manually)`, duration: 2200 })
     }
+
+    const now = new Date().toISOString()
+    const inferredPlateType = (() => {
+      const raw = String(apiInfo.MECH_RESULT || apiInfo.PLATE_TYPE || '').toUpperCase()
+      return ['OK', 'RA', 'DIV', 'MTI', 'TPI'].includes(raw) ? raw : 'OK'
+    })()
+    const newPlate = {
+      plateNo:  apiInfo.PLATE_NO  || quickEntry.trim(),
+      heatNo:   apiInfo.HEAT_NO   || '',
+      plateType: inferredPlateType,
+      ordNo:    apiInfo.ORD_NO    || '',
+      grade:    apiInfo.GRADE     || '',
+      tdc:      apiInfo.TDC       || '',
+      colourCd: apiInfo.COLOUR_CD || '',
+      ordSize:  apiInfo.PLATE_SIZE || '',
+      pcWgt:    apiInfo.WGT ? parseFloat(apiInfo.WGT) : null,
+      loaded:   true,
+      loadedAt: now,
+      wagonNo:  activeWagon,
+      _manual:  true,
+    }
+    updateSession(prev => ({
+      ...prev,
+      consignees: prev.consignees.map(c =>
+        c.consigneeCode === activeCode
+          ? {
+            ...c,
+            plates: [...c.plates, newPlate],
+            okPlateCount: inferredPlateType === 'OK' ? (c.okPlateCount ?? 0) + 1 : (c.okPlateCount ?? 0),
+          }
+          : c
+    ),
+      loadingLog: prev.loadingLog.concat({
+        timestamp: now,
+        plateNo:   newPlate.plateNo,
+        consigneeCode: activeCode,
+        wagonNo:   activeWagon,
+        action:    'LOADED',
+      }),
+    }))
+    toast.success({ message: `${newPlate.plateNo} → Loaded (added manually)`, duration: 2200 })
 
     setQuickEntry('')
     setQuickResult(null)
@@ -2023,75 +2057,139 @@ export default function LoadingOperationsPage() {
                       )}
 
                       {quickResult && !quickError && (() => {
-                        const isListPlate = quickResult.type === 'list'
-                        const p = isListPlate ? quickResult.plate : null
-                        const info = isListPlate ? null : quickResult.apiInfo
-                        const plateNo  = p?.plateNo  || info?.PLATE_NO  || quickEntry
-                        const grade    = p?.grade    || info?.GRADE    || ''
-                        const heatNo   = p?.heatNo   || info?.HEAT_NO  || ''
-                        const size     = p?.ordSize  || info?.PLATE_SIZE || ''
-                        const weight   = p?.pcWgt    || (info?.WGT ? parseFloat(info.WGT) : null)
-                        const tdc      = p?.tdc      || info?.TDC      || ''
-                        const mech      = info?.MECH_RESULT || ''
-                        const consigneeNm = info?.CONSIGNEE_NM || ''
-                        const ordNo     = info?.ORD_NO || (p?.ordNo) || ''
-                        const nextJob   = info?.NEXT_JOB || ''
-                        const ordStatus = info?.ORD_STATUS || ''
-                        const ordFlag   = info?.ORD_FLAG || ''
-                        const alreadyLoaded = p?.loaded
-                        return (
-                          <div style={{
-                            background: alreadyLoaded ? 'var(--green-50)' : 'var(--navy-50)',
-                            border: `1px solid ${alreadyLoaded ? 'var(--green-200)' : 'var(--navy-200)'}`,
-                            borderRadius: 'var(--r-md)',
-                            padding: '8px 10px',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 10,
-                            width: '100%',
-                          }}>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-                                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13, color: 'var(--navy-700)' }}>{plateNo}</span>
-                                {!isListPlate && (
-                                  <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 'var(--r-full)', background: 'var(--amber-100)', color: 'var(--amber-700)', fontWeight: 600 }}>Not in list</span>
-                                )}
-                                {alreadyLoaded && (
-                                  <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 'var(--r-full)', background: 'var(--green-100)', color: 'var(--green-700)', fontWeight: 600 }}>Already loaded</span>
-                                )}
+                        // ── List match (from consignee's own plates) ──
+                        if (quickResult.type === 'list') {
+                          const p = quickResult.plate
+                          return (
+                            <div style={{
+                              background: p.loaded ? 'var(--green-50)' : 'var(--navy-50)',
+                              border: `1px solid ${p.loaded ? 'var(--green-200)' : 'var(--navy-200)'}`,
+                              borderRadius: 'var(--r-md)',
+                              padding: '8px 10px',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 10,
+                              width: '100%',
+                            }}>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13, color: 'var(--navy-700)' }}>{p.plateNo}</span>
+                                  {p.loaded && (
+                                    <span style={{ fontSize: 9.5, padding: '1px 5px', borderRadius: 'var(--r-full)', background: 'var(--green-100)', color: 'var(--green-700)', fontWeight: 600 }}>Already loaded</span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
+                                  {p.grade  && <span><span style={{ color: 'var(--text-muted)' }}>Grade </span>{p.grade}</span>}
+                                  {p.heatNo && <span style={{ fontFamily: 'var(--font-mono)' }}>{p.heatNo}</span>}
+                                  {p.ordSize && <span>{p.ordSize}</span>}
+                                  {p.pcWgt && <span>{p.pcWgt}T</span>}
+                                  {p.tdc    && <span><span style={{ color: 'var(--text-muted)' }}>TDC </span>{p.tdc}</span>}
+                                  {p.ordNo  && <span><span style={{ color: 'var(--text-muted)' }}>Order </span>{p.ordNo}</span>}
+                                </div>
                               </div>
-                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', flexWrap: 'wrap', gap: '2px 10px' }}>
-                                {grade  && <span><span style={{ color: 'var(--text-muted)' }}>Grade </span>{grade}</span>}
-                                {heatNo && <span style={{ fontFamily: 'var(--font-mono)' }}>{heatNo}</span>}
-                                {size   && <span>{size}</span>}
-                                {weight && <span>{weight}T</span>}
-                                {tdc    && <span><span style={{ color: 'var(--text-muted)' }}>TDC </span>{tdc}</span>}
-                                {mech      && <span style={{ color: mech === 'OK' ? 'var(--green-700)' : 'var(--amber-700)', fontWeight: 600 }}>{mech}</span>}
-                                {consigneeNm && <span><span style={{ color: 'var(--text-muted)' }}>Consignee </span>{consigneeNm}</span>}
-                                {ordNo     && <span><span style={{ color: 'var(--text-muted)' }}>Order </span>{ordNo}</span>}
-                                {nextJob   && <span><span style={{ color: 'var(--text-muted)' }}>Next Job </span>{nextJob}</span>}
-                                {ordStatus && <span><span style={{ color: 'var(--text-muted)' }}>Status </span>{ordStatus}</span>}
-                                {ordFlag   && <span><span style={{ color: 'var(--text-muted)' }}>Flag </span>{ordFlag}</span>}
-                              </div>
+                              {!p.loaded ? (
+                                <button className="btn btn-success btn-sm" onClick={handleQuickLoad} style={{ flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                  <CheckIcon size={12} /> Load
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: 11, color: 'var(--green-700)', fontWeight: 600, flexShrink: 0 }}>✓ Done</span>
+                              )}
                             </div>
-                            {!alreadyLoaded ? (
-                              <button
-                                className="btn btn-success btn-sm"
-                                onClick={handleQuickLoad}
-                                style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
-                              >
-                                <CheckIcon size={12} /> Load
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: 11, color: 'var(--green-700)', fontWeight: 600, flexShrink: 0 }}>✓ Done</span>
-                            )}
+                          )
+                        }
+
+                        // ── API search results (array of plates) ──
+                        const items = Array.isArray(quickResult.apiInfo) ? quickResult.apiInfo : [quickResult.apiInfo]
+                        if (items.length === 0) return null
+
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxHeight: 260, overflowY: 'auto' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, padding: '2px 2px' }}>
+                              {items.length} result{items.length !== 1 ? 's' : ''} found
+                            </div>
+                            {items.map((info, i) => {
+                              const plateNo  = info?.PLATE_NO || ''
+                              const grade    = info?.GRADE || ''
+                              const heatNo   = info?.HEAT_NO || ''
+                              const size     = info?.PLATE_SIZE || ''
+                              const weight   = info?.WGT ? parseFloat(info.WGT) : null
+                              const tdc      = info?.TDC || ''
+                              const mech     = info?.MECH_RESULT || ''
+                              const consigneeNm = info?.CONSIGNEE_NM || ''
+                              const ordNo    = info?.ORD_NO || ''
+                              const nextJob  = info?.NEXT_JOB || ''
+                              const ordStatus = info?.ORD_STATUS || ''
+                              const ordFlag  = info?.ORD_FLAG || ''
+                              const loadingStatus = info?.LOADING_STATUS || ''
+                              const momPlateNo = info?.MOM_PLATE_NO || ''
+                              // Check if this plate already exists in the active consignee's list
+                              const existingPlate = activeConsignee?.plates.find(p => p.plateNo === plateNo)
+                              const alreadyLoaded = existingPlate?.loaded
+                              return (
+                                <div key={plateNo || i} style={{
+                                  background: alreadyLoaded ? 'var(--green-50)' : 'var(--navy-50)',
+                                  border: `1px solid ${alreadyLoaded ? 'var(--green-200)' : 'var(--navy-200)'}`,
+                                  borderRadius: 'var(--r-md)',
+                                  padding: '7px 10px',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: 8,
+                                  flexShrink: 0,
+                                }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 12.5, color: 'var(--navy-700)' }}>{plateNo}</span>
+                                      {loadingStatus && (
+                                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 'var(--r-full)', background: 'var(--amber-100)', color: 'var(--amber-700)', fontWeight: 600 }}>
+                                          {loadingStatus}
+                                        </span>
+                                      )}
+                                      {momPlateNo && momPlateNo !== plateNo && (
+                                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 'var(--r-full)', background: 'var(--gray-100)', color: 'var(--text-muted)', fontWeight: 500 }}>
+                                          MOM: {momPlateNo}
+                                        </span>
+                                      )}
+                                      {alreadyLoaded && (
+                                        <span style={{ fontSize: 9, padding: '1px 5px', borderRadius: 'var(--r-full)', background: 'var(--green-100)', color: 'var(--green-700)', fontWeight: 600 }}>
+                                          Already loaded
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div style={{ fontSize: 10.5, color: 'var(--text-secondary)', marginTop: 1, display: 'flex', flexWrap: 'wrap', gap: '1px 8px' }}>
+                                      {grade  && <span><span style={{ color: 'var(--text-muted)' }}>Grade </span>{grade}</span>}
+                                      {heatNo && <span style={{ fontFamily: 'var(--font-mono)' }}>{heatNo}</span>}
+                                      {size   && <span>{size}</span>}
+                                      {weight && <span>{weight}T</span>}
+                                      {tdc    && <span><span style={{ color: 'var(--text-muted)' }}>TDC </span>{tdc}</span>}
+                                      {mech   && <span style={{ color: mech === 'OK' ? 'var(--green-700)' : 'var(--amber-700)', fontWeight: 600 }}>{mech}</span>}
+                                      {consigneeNm && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 140 }} title={consigneeNm}>{consigneeNm}</span>}
+                                      {ordNo  && <span><span style={{ color: 'var(--text-muted)' }}>Order </span>{ordNo}</span>}
+                                      {nextJob && <span><span style={{ color: 'var(--text-muted)' }}>Next </span>{nextJob}</span>}
+                                      {ordStatus && <span><span style={{ color: 'var(--text-muted)' }}>Status </span>{ordStatus}</span>}
+                                      {ordFlag && <span><span style={{ color: 'var(--text-muted)' }}>Flag </span>{ordFlag}</span>}
+                                    </div>
+                                  </div>
+                                  {!alreadyLoaded ? (
+                                    <button
+                                      className="btn btn-success btn-sm"
+                                      onClick={() => handleQuickLoad(info)}
+                                      style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+                                    >
+                                      <CheckIcon size={12} /> Load
+                                    </button>
+                                  ) : (
+                                    <span style={{ fontSize: 11, color: 'var(--green-700)', fontWeight: 600, flexShrink: 0 }}>✓ Done</span>
+                                  )}
+                                </div>
+                              )
+                            })}
                           </div>
                         )
                       })()}
 
-                      {!quickResult && !quickError && !isFetchingPlate && (
+                      {/* {!quickResult && !quickError && !isFetchingPlate && (
                         <div className="form-hint">Type a plate number to search. Found plates show a Load button.</div>
-                      )}
+                      )} */}
                     </div>
                   )}
                 </>
