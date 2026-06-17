@@ -911,3 +911,329 @@ export function loadFailedSubmissions() {
 export function clearFailedSubmissions() {
   localStorage.removeItem(FAILED_SUBMISSIONS_KEY)
 }
+
+export async function generateReportHomepage(rakeId, loadedData) {
+  const { default: jsPDF }     = await import('jspdf')
+  const { default: autoTable } = await import('jspdf-autotable')
+
+  if (!Array.isArray(loadedData) || loadedData.length === 0) {
+    throw new Error('No loaded plate data available for this rake.')
+  }
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' })
+  const PW  = doc.internal.pageSize.getWidth()
+  const PH  = doc.internal.pageSize.getHeight()
+  const M   = 12
+
+  // Group by destination → consignee → plates
+  const destMap = {}
+  for (const row of loadedData) {
+    const destCode = String(row.WAGON_DEST_CD || row.DEST_CD1 || '').trim()
+    const destName = String(row.DEST_NM1 || '').trim()
+    const consCode = String(row.DISPATCH_CD || '').trim()
+    const consName = String(row.CUST_NM || '').trim()
+    const wagonNo  = String(row.DISPATCH_NM || '').trim()
+    const plateNo  = String(row.CHILD_PLATE_NO || '').trim()
+    const heatNo   = String(row.HEAT_NO || '').trim()
+    const grade    = String(row.GRADE || '').trim()
+    const ordSize  = String(row.ORD_SIZE || '').trim()
+    const pcWgt    = row.PC_WGT != null ? parseFloat(row.PC_WGT) : null
+    const tdc      = String(row.TDC || '').trim()
+    const ordNo    = String(row.ORD_NO || '').trim()
+    const status   = String(row.LOADING_STATUS || '').trim()
+
+    if (!plateNo && !consCode && !wagonNo) continue
+    const dKey = destCode || 'UNKNOWN'
+    if (!destMap[dKey]) destMap[dKey] = { destCode, destName, consignees: {} }
+    const cKey = consCode || 'UNKNOWN'
+    if (!destMap[dKey].consignees[cKey]) {
+      destMap[dKey].consignees[cKey] = { consCode, consName, plates: [] }
+    }
+    destMap[dKey].consignees[cKey].plates.push({ plateNo, heatNo, grade, ordSize, pcWgt, tdc, ordNo, wagonNo, status })
+  }
+
+  const allDests     = Object.values(destMap)
+  const totalPlates  = loadedData.length
+  const totalWeight  = loadedData.reduce((s, r) => s + (r.PC_WGT != null ? parseFloat(r.PC_WGT) : 0), 0)
+  const uniqueWagons = new Set(loadedData.map(r => String(r.DISPATCH_NM || '').trim()).filter(Boolean))
+  const uniqueCons   = new Set(loadedData.map(r => String(r.DISPATCH_CD || '').trim()).filter(Boolean))
+  const destString   = allDests.map(d => `${d.destName} (${d.destCode})`).filter(s => s.trim() !== '()').join(' · ') || '—'
+
+  function drawPageHeader() {
+    doc.setFillColor(15, 31, 61)
+    doc.rect(0, 0, PW, 14, 'F')
+    doc.setFillColor(234, 107, 26)
+    doc.rect(0, 14, PW, 1, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.setTextColor(255, 255, 255)
+    doc.text('BHILAI STEEL PLANT  —  PLATE MILL LOADED PLATES REPORT', M, 6)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6)
+    doc.setTextColor(170, 195, 230)
+    doc.text('STEEL AUTHORITY OF INDIA LIMITED  |  FOR INTERNAL USE ONLY', M, 11)
+  }
+
+  drawPageHeader()
+  let y = 18
+
+  // Info block
+  const infoBlockH = 20
+  doc.setFillColor(239, 245, 253)
+  doc.setDrawColor(200, 215, 235)
+  doc.setLineWidth(0.25)
+  doc.rect(M, y, PW - M * 2, infoBlockH, 'FD')
+
+  const half = (PW - M * 2) / 2
+  const infoItems = [
+    ['RAKE ID',      String(rakeId)],
+    ['DESTINATION',  destString],
+    ['REPORT DATE',  formatDateTimeFull(new Date().toISOString())],
+    ['TOTAL PLATES', String(totalPlates)],
+  ]
+  infoItems.forEach(([label, value], i) => {
+    const col = i % 2
+    const row = Math.floor(i / 2)
+    const x   = M + col * half + 4
+    const iy  = y + 4 + row * 8.5
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6)
+    doc.setTextColor(80, 110, 155)
+    doc.text(label, x, iy)
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.setTextColor(15, 31, 61)
+    doc.text(String(value), x, iy + 4.5, { maxWidth: half - 8 })
+  })
+  y += infoBlockH + 3
+
+  // Summary tiles
+  const tiles = [
+    { label: 'CONSIGNEES',    value: uniqueCons.size,               fg: [21, 43, 82],   bg: [240, 245, 255] },
+    { label: 'WAGONS',        value: uniqueWagons.size,             fg: [21, 43, 82],   bg: [240, 245, 255] },
+    { label: 'LOADED PLATES', value: totalPlates,                   fg: [21, 128, 61],  bg: [240, 253, 244] },
+    { label: 'WEIGHT (T)',    value: Number(totalWeight.toFixed(1)), fg: [234, 107, 26], bg: [255, 247, 235] },
+  ]
+  const tileW = (PW - M * 2) / tiles.length
+  const tileH = 12
+  tiles.forEach((t, i) => {
+    const x = M + i * tileW
+    doc.setFillColor(...t.bg)
+    doc.setDrawColor(210, 220, 235)
+    doc.setLineWidth(0.25)
+    doc.rect(x, y, tileW, tileH, 'FD')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(5.5)
+    doc.setTextColor(100, 120, 155)
+    doc.text(t.label, x + tileW / 2, y + 4.5, { align: 'center' })
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(11)
+    doc.setTextColor(...t.fg)
+    doc.text(String(t.value), x + tileW / 2, y + 10, { align: 'center' })
+  })
+  y += tileH + 4
+
+  // Per-destination → per-consignee tables
+  for (const dest of allDests) {
+    if (y > PH - 40) { doc.addPage(); drawPageHeader(); y = 18 }
+    doc.setFillColor(15, 31, 61)
+    doc.rect(M, y, PW - M * 2, 6, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7)
+    doc.setTextColor(255, 255, 255)
+    doc.text(`DESTINATION: ${dest.destName || '—'}  (${dest.destCode || '—'})`, M + 3, y + 4.2)
+    y += 7
+
+    for (const cons of Object.values(dest.consignees)) {
+      if (!cons.plates.length) continue
+
+      const sortedPlates = [...cons.plates].sort((a, b) => {
+        const wagA = (a.wagonNo || '').trim() || '~~~'
+        const wagB = (b.wagonNo || '').trim() || '~~~'
+        const wc = wagA.localeCompare(wagB, undefined, { numeric: true, sensitivity: 'base' })
+        if (wc !== 0) return wc
+        return String(a.plateNo || '').localeCompare(String(b.plateNo || ''), undefined, { numeric: true, sensitivity: 'base' })
+      })
+
+      const wagonsForCons = [...new Set(sortedPlates.map(p => (p.wagonNo || '').trim()).filter(Boolean))]
+      if (sortedPlates.some(p => !(p.wagonNo || '').trim())) wagonsForCons.push('Unassigned')
+
+      const groupedRows = []
+      let currentWagonLabel = null
+      let plateSerial = 0
+
+      sortedPlates.forEach(p => {
+        const wagonLabel = (p.wagonNo || '').trim() || 'Unassigned'
+        if (wagonLabel !== currentWagonLabel) {
+          groupedRows.push([{
+            content: wagonLabel !== 'Unassigned' ? `Wagon No.:  ${wagonLabel}` : 'Wagon No.:  Unassigned',
+            colSpan: 9,
+            styles: {
+              fillColor: [226, 232, 240], textColor: [30, 42, 68], fontStyle: 'bold', fontSize: 6.8,
+              cellPadding: { top: 1.8, bottom: 1.8, left: 4, right: 4 },
+              lineWidth: { top: 0.3, bottom: 0.3 }, lineColor: [160, 175, 200],
+            },
+          }])
+          currentWagonLabel = wagonLabel
+        }
+        plateSerial += 1
+        groupedRows.push([
+          plateSerial,
+          p.plateNo  || '—',
+          p.heatNo   || '—',
+          p.grade    || '—',
+          p.ordSize  || '—',
+          p.pcWgt != null ? Number(p.pcWgt).toFixed(3) : '—',
+          p.tdc      || '—',
+          p.ordNo    || '—',
+          p.status   || '—',
+        ])
+      })
+
+      if (y > PH - 35) { doc.addPage(); drawPageHeader(); y = 18 }
+
+      autoTable(doc, {
+        startY: y,
+        head: [
+          [{ content: `${cons.consCode || '—'}  —  ${cons.consName || '—'}`, colSpan: 9,
+             styles: { fillColor: [21, 43, 82], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8, cellPadding: { top: 3, bottom: 3, left: 4, right: 4 } } }],
+          [{ content: `Wagon(s): ${wagonsForCons.join(', ') || 'N/A'}   |   Plates: ${cons.plates.length}`, colSpan: 9,
+             styles: { fillColor: [37, 65, 120], textColor: [185, 210, 255], fontStyle: 'normal', fontSize: 6.5, cellPadding: { top: 1.8, bottom: 1.8, left: 4, right: 4 } } }],
+          ['Sl.', 'Plate No.', 'Heat No.', 'Grade', 'Size (mm)', 'Wt. (T)', 'TDC', 'Order No.', 'Status'],
+        ],
+        body: groupedRows,
+        headStyles: { fillColor: [21, 43, 82], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.8 },
+        didParseCell(data) {
+          if (data.section === 'head' && data.row.index === 2) {
+            data.cell.styles.fillColor   = [27, 56, 101]
+            data.cell.styles.fontSize    = 6.5
+            data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 2, right: 2 }
+          }
+          if (data.section === 'body' && data.column.index === 8 && data.cell.text?.[0]) {
+            const s = String(data.cell.text[0]).toUpperCase()
+            if (s.includes('DA CREATED')) {
+              data.cell.styles.textColor = [21, 128, 61]
+              data.cell.styles.fontStyle = 'bold'
+            } else if (s.includes('LOADING STARTED')) {
+              data.cell.styles.textColor = [234, 107, 26]
+              data.cell.styles.fontStyle = 'bold'
+            }
+          }
+        },
+        bodyStyles: { fontSize: 7, cellPadding: { top: 1.8, bottom: 1.8, left: 2, right: 2 } },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: {
+          0: { cellWidth: 8,  halign: 'center' },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 20 },
+          3: { cellWidth: 22 },
+          4: { cellWidth: 28 },
+          5: { cellWidth: 16, halign: 'right' },
+          6: { cellWidth: 18 },
+          7: { cellWidth: 20 },
+          8: { cellWidth: 'auto' },
+        },
+        theme: 'striped',
+        margin: { left: M, right: M },
+        tableLineColor: [210, 220, 235],
+        tableLineWidth: 0.15,
+      })
+      y = doc.lastAutoTable.finalY + 4
+    }
+  }
+
+  // Wagon-wise summary page
+  doc.addPage()
+  drawPageHeader()
+  y = 18
+
+  doc.setFillColor(15, 31, 61)
+  doc.rect(M, y, PW - M * 2, 6, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(7)
+  doc.setTextColor(255, 255, 255)
+  doc.text('WAGON-WISE SUMMARY', M + 3, y + 4.2)
+  y += 8
+
+  const wagonSumMap = {}
+  for (const row of loadedData) {
+    const wNo = String(row.DISPATCH_NM || '').trim()
+    if (!wNo) continue
+    if (!wagonSumMap[wNo]) {
+      wagonSumMap[wNo] = {
+        wagonNo:  wNo,
+        consCode: String(row.DISPATCH_CD || '').trim(),
+        consName: String(row.CUST_NM     || '').trim(),
+        destCode: String(row.WAGON_DEST_CD || row.DEST_CD1 || '').trim(),
+        plates:   0,
+        weight:   0,
+      }
+    }
+    wagonSumMap[wNo].plates++
+    wagonSumMap[wNo].weight += row.PC_WGT != null ? parseFloat(row.PC_WGT) : 0
+  }
+
+  const wagonSumRows = Object.values(wagonSumMap)
+    .sort((a, b) => a.wagonNo.localeCompare(b.wagonNo))
+    .map(w => [w.wagonNo, w.consCode, w.consName, w.destCode, w.plates, Number(w.weight.toFixed(3))])
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Wagon No.', 'Cons. Code', 'Consignee Name', 'Dest.', 'Plates', 'Wt. (T)']],
+    body: wagonSumRows,
+    headStyles: { fillColor: [21, 43, 82], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold', cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 } },
+    bodyStyles: { fontSize: 7.5, cellPadding: { top: 2, bottom: 2, left: 3, right: 3 } },
+    columnStyles: {
+      0: { cellWidth: 36 },
+      1: { cellWidth: 24 },
+      2: { cellWidth: 'auto' },
+      3: { cellWidth: 20 },
+      4: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
+      5: { cellWidth: 22, halign: 'right' },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    theme: 'striped',
+    margin: { left: M, right: M },
+    tableLineColor: [210, 220, 235],
+    tableLineWidth: 0.15,
+  })
+
+  y = doc.lastAutoTable.finalY + 16
+  if (y > PH - 42) { doc.addPage(); drawPageHeader(); y = 28 }
+
+  // Signature block
+  const sigLabels = ['Prepared By (Operator)', 'Verified By (Supervisor)', 'Approved By (In-charge)']
+  const sigW = (PW - M * 2) / 3
+  sigLabels.forEach((label, i) => {
+    const x = M + i * sigW
+    doc.setDrawColor(120, 135, 160)
+    doc.setLineWidth(0.35)
+    doc.line(x + 6, y + 16, x + sigW - 6, y + 16)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(100, 115, 140)
+    doc.text(label,                 x + sigW / 2, y + 20, { align: 'center' })
+    doc.text('Date: _______________', x + sigW / 2, y + 25, { align: 'center' })
+  })
+
+  // Page numbers + footer on every page
+  const totalPages = doc.internal.getNumberOfPages()
+  for (let p = 1; p <= totalPages; p++) {
+    doc.setPage(p)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(200, 215, 235)
+    doc.setFillColor(15, 31, 61)
+    doc.rect(PW - M - 28, 4, 30, 7, 'F')
+    doc.text(`Page ${p} of ${totalPages}`, PW - M, 9, { align: 'right' })
+    doc.setFillColor(230, 235, 242)
+    doc.rect(0, PH - 7, PW, 7, 'F')
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6)
+    doc.setTextColor(80, 95, 120)
+    doc.text('Bhilai Steel Plant — Plate Mill Division, SAIL  |  This document is for internal use only', M, PH - 2.5)
+    doc.text(`Generated: ${formatDateTimeFull(new Date())}`, PW - M, PH - 2.5, { align: 'right' })
+  }
+
+  doc.save(`BSP_Loaded_Report_${rakeId}_${formatDateForFile(new Date())}.pdf`)
+}

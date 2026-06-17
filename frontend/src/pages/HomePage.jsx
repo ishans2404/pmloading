@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell.jsx'
-import { fetchRakesList, fetchLoadingReport, fetchWagonsByRake, updateTramsId, fetchTramsRakeids } from '../api/index.js'
+import { fetchRakesList, fetchLoadingReport, fetchWagonsByRake, updateTramsId, fetchTramsRakeids, fetchLoadedDetails } from '../api/index.js'
+import { generateReportHomepage } from '../utils/export.js'
 import { useToast } from '../context/ToastContext.jsx'
 import Modal from '../components/shared/Modal.jsx'
 import { isCoarsePointer } from '../utils/device.js'
@@ -51,6 +52,7 @@ export default function HomePage() {
   const [tramsIds, setTramsIds] = useState([])
   const [tramsIdsLoading, setTramsIdsLoading] = useState(false)
   const [tramsDropdownOpen, setTramsDropdownOpen] = useState(false)
+  const [generatingReport, setGeneratingReport] = useState({})
 
   useEffect(() => {
     function checkActiveSession() {
@@ -157,7 +159,29 @@ export default function HomePage() {
     }
   }
 
-
+  async function handleGenerateReport(rake) {
+    setGeneratingReport(prev => ({ ...prev, [rake.rakeId]: true }))
+    toastCtx.info({
+      title: 'Generating Report',
+      message: `Loading Report for Rake ${rake.rakeId}`,
+      duration: 2200,
+    })
+    // Fire-and-forget: runs in background, user can continue working
+    fetchLoadedDetails(rake.rakeId)
+      .then(loadedData => {
+        if (!Array.isArray(loadedData) || loadedData.length === 0) {
+          toastCtx.warning('No loaded plate data found for this rake.')
+          return
+        }
+        return generateReportHomepage(rake.rakeId, loadedData)
+      })
+      .catch(err => {
+        toastCtx.error('Failed to generate report: ' + (err?.message || 'Unknown error'))
+      })
+      .finally(() => {
+        setGeneratingReport(prev => ({ ...prev, [rake.rakeId]: false }))
+      })
+  }
 
   // Derived
   const filtered = rakes
@@ -338,9 +362,9 @@ export default function HomePage() {
                     <th>Status</th>
                     <th style={{ textAlign:'center' }}>Wagons</th>
                     <SortTh col="createdAt" label="Created"       current={sortCol} dir={sortDir} onSort={handleSort} />
-                    <th>By</th>
                     <th style={{ textAlign:'center' }}>TRAMS ID</th>
                     <th style={{ textAlign:'right' }}>Action</th>
+                    <th style={{ textAlign:'center' }}>Report</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -381,25 +405,45 @@ export default function HomePage() {
                         <td>
                           <div style={{ fontSize:12.5, color:'var(--text-primary)' }}>{fmtDateOnly(rake.createdAt)}</div>
                         </td>
-                        <td style={{ fontSize:12.5 }}>{rake.createdBy || '—'}</td>
-                        <td style={{ textAlign:'center' }}>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={e => {
-                              e.stopPropagation()
-                              setTramsInput('')
-                              setTramsDropdownOpen(false)
-                              setTramsModal({ rakeId: rake.rakeId })
-                              if (tramsIds.length === 0) {
-                                setTramsIdsLoading(true)
-                                fetchTramsRakeids().then(items => setTramsIds(items)).finally(() => setTramsIdsLoading(false))
-                              }
-                            }}
-                          >
-                            Update
-                          </button>
+                      <td style={{ textAlign:'center' }}>
+                          {rake.tramsId ? (
+                            <span
+                              className="td-mono"
+                              onClick={e => {
+                                e.stopPropagation()
+                                setTramsInput('')
+                                setTramsDropdownOpen(false)
+                                setTramsModal({ rakeId: rake.rakeId })
+                                if (tramsIds.length === 0) {
+                                  setTramsIdsLoading(true)
+                                  fetchTramsRakeids().then(items => setTramsIds(items)).finally(() => setTramsIdsLoading(false))
+                                }
+                              }}
+                              title="Click to update"
+                              role="button"
+                              style={{ cursor:'pointer', fontWeight:600, fontSize:12.5, color:'var(--navy-700)', fontFamily:'var(--font-mono)' }}
+                            >
+                              {rake.tramsId}
+                            </span>
+                          ) : (
+                            <button
+                              className="btn btn-secondary btn-sm"
+                              onClick={e => {
+                                e.stopPropagation()
+                                setTramsInput('')
+                                setTramsDropdownOpen(false)
+                                setTramsModal({ rakeId: rake.rakeId })
+                                if (tramsIds.length === 0) {
+                                  setTramsIdsLoading(true)
+                                  fetchTramsRakeids().then(items => setTramsIds(items)).finally(() => setTramsIdsLoading(false))
+                                }
+                              }}
+                            >
+                              Update
+                            </button>
+                          )}
                         </td>
-                        <td style={{ textAlign:'right' }}>
+                      <td style={{ textAlign:'right' }}>
                           {canLoad ? (
                             <button
                               className={`btn btn-sm ${rake.status === 'IN_PROGRESS' ? 'btn-accent' : 'btn-primary'}`}
@@ -410,6 +454,15 @@ export default function HomePage() {
                           ) : (
                             <span className="badge badge-neutral" style={{ fontSize:11 }}>Done</span>
                           )}
+                        </td>
+                        <td style={{ textAlign:'center' }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            disabled={generatingReport[rake.rakeId]}
+                            onClick={e => { e.stopPropagation(); handleGenerateReport(rake) }}
+                          >
+                            {generatingReport[rake.rakeId] ? <><span className="spinner spinner-sm" /> Generating…</> : 'Generate'}
+                          </button>
                         </td>
                       </tr>
                     )

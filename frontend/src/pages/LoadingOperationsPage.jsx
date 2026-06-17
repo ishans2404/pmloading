@@ -1911,7 +1911,7 @@ export default function LoadingOperationsPage() {
                                 <span className="plate-no" style={{ fontSize: 12.5, fontWeight: 600 }}>{p.plateNo}</span>
                                 {p._external && (
                                   <span style={{ fontSize: 9, padding: '1px 6px', borderRadius: 'var(--r-full)', background: 'var(--amber-100)', color: 'var(--amber-700)', fontWeight: 600, flexShrink: 0 }}>
-                                    EXT
+                                    DSP
                                   </span>
                                 )}
                               </div>

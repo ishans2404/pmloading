@@ -345,9 +345,16 @@ def normalize_rakes_list(raw) -> list:
                 "completedAt": row.get("COMPLETED_DT") or row.get("COMP_DT"),
                 "loadedPlates": row.get("LOADED_PLATES") or row.get("LOAD_PLATES"),
                 "totalPlates": row.get("TOTAL_PLATES") or row.get("TOT_PLATES"),
+                "tramsId": row.get("RAKEID_TRAMS") or row.get("TRAMS_ID") or "",
             }
 
         rake = rake_map[rake_id]
+
+        # Update tramsId if a later row provides it
+        trams = str(row.get("RAKEID_TRAMS") or row.get("TRAMS_ID") or "").strip()
+        if trams and not rake.get("tramsId"):
+            rake["tramsId"] = trams
+
         pairs = [
             (
                 str(row.get("DEST_CD1") or row.get("DEST_CD") or row.get("dest_cd1") or row.get("dest_cd") or ""),
