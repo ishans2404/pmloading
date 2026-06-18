@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell.jsx'
-import { fetchDestinations, generateRakeId } from '../api/index.js'
+import { fetchDestinations, generateRakeId, updateTramsId, fetchTramsRakeids } from '../api/index.js'
 import { useToast } from '../context/ToastContext.jsx'
+import Modal from '../components/shared/Modal.jsx'
+import { isCoarsePointer } from '../utils/device.js'
 
 export default function RakeGenerationPage() {
   const toast = useToast()
@@ -14,6 +16,12 @@ export default function RakeGenerationPage() {
   const [dest2, setDest2]     = useState('')
   const [generating, setGen]  = useState(false)
   const [result, setResult]   = useState(null) // { rakeId }
+  const [tramsModal, setTramsModal] = useState(null)
+  const [tramsInput, setTramsInput] = useState('')
+  const [tramsLoading, setTramsLoading] = useState(false)
+  const [tramsIds, setTramsIds] = useState([])
+  const [tramsIdsLoading, setTramsIdsLoading] = useState(false)
+  const [tramsDropdownOpen, setTramsDropdownOpen] = useState(false)
   const [copied, setCopied]   = useState(false)
   const [history, setHistory] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem('bsp_rake_history') || '[]') } catch { return [] }
@@ -55,6 +63,29 @@ export default function RakeGenerationPage() {
   function destLabel(code) {
     const d = destinations.find(x => x.code === code)
     return d ? `${d.name} (${d.code})` : code
+  }
+
+  async function handleUpdateTramsId() {
+    if (!tramsInput.trim()) return
+    setTramsLoading(true)
+    try {
+      const result = await updateTramsId(tramsModal.rakeId, tramsInput.trim())
+      const status = String(result?.STATUS || '').toUpperCase()
+      const message = result?.MESSAGE || 'TRAMS ID updated successfully.'
+
+      if (status === 'TRUE') {
+        toast.success({ title: 'TRAMS ID Updated', message })
+        setTramsModal(null)
+        setTramsInput('')
+        return
+      }
+
+      toast.error(message)
+    } catch (err) {
+      toast.error(err?.message || 'Failed to update TRAMS ID.')
+    } finally {
+      setTramsLoading(false)
+    }
   }
 
   function handleCopy() {
@@ -219,6 +250,21 @@ export default function RakeGenerationPage() {
                   <div className="rakeid-label">Rake ID</div>
                   <div className="rakeid-value">{result.rakeId}</div>
                 </div>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={e => {
+                    e.stopPropagation()
+                    setTramsInput('')
+                    setTramsDropdownOpen(false)
+                    setTramsModal({ rakeId: result.rakeId })
+                    if (tramsIds.length === 0) {
+                      setTramsIdsLoading(true)
+                      fetchTramsRakeids().then(items => setTramsIds(items)).finally(() => setTramsIdsLoading(false))
+                    }
+                  }}
+                >
+                  Update
+                </button>
                 <button className="btn btn-secondary btn-sm copy-btn" onClick={handleCopy}>
                   {copied ? <><CheckIcon size={13} /> Copied!</> : <><CopyIcon size={13} /> Copy</>}
                 </button>
@@ -311,6 +357,85 @@ export default function RakeGenerationPage() {
             </div>
           </div>
         )}
+
+        <Modal
+          open={Boolean(tramsModal)}
+          onClose={() => { setTramsModal(null); setTramsInput(''); setTramsDropdownOpen(false) }}
+          title={`Update TRAMS ID - Rake ${tramsModal?.rakeId || ''}`}
+          size="modal-cst"
+          footer={
+            <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => { setTramsModal(null); setTramsInput(''); setTramsDropdownOpen(false) }}>Cancel</button>
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={handleUpdateTramsId}
+                disabled={!tramsInput.trim() || tramsLoading}
+              >
+                {tramsLoading ? <><span className="spinner spinner-sm" /> Updating...</> : 'Update'}
+              </button>
+            </div>
+          }
+        >
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <div className="form-group" style={{ position:'relative' }}>
+              <label className="form-label" htmlFor="trams-id-input">TRAMS ID</label>
+              <div style={{ position:'relative' }}>
+                <input
+                  id="trams-id-input"
+                  className="form-control mono"
+                  placeholder={tramsIdsLoading ? 'Loading TRAMS IDs…' : 'Type or select TRAMS ID…'}
+                  value={tramsInput}
+                  onChange={e => { setTramsInput(e.target.value.toUpperCase()); setTramsDropdownOpen(true) }}
+                  onFocus={() => setTramsDropdownOpen(true)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') { setTramsDropdownOpen(false); handleUpdateTramsId() }
+                    if (e.key === 'Escape') setTramsDropdownOpen(false)
+                  }}
+                  autoFocus={!isCoarsePointer()}
+                  autoComplete="off"
+                  disabled={tramsIdsLoading}
+                />
+                {tramsIdsLoading && (
+                  <span className="spinner spinner-sm" style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)' }} />
+                )}
+              </div>
+              {tramsDropdownOpen && !tramsIdsLoading && (() => {
+                const q = tramsInput.trim()
+                const filtered = tramsIds.filter(item => !q || String(item.trams_rakeid).includes(q))
+                if (!filtered.length) return null
+                return (
+                  <div style={{
+                    position:'absolute', top:'100%', left:0, right:0, zIndex:1000,
+                    background:'var(--bg-surface)', border:'1px solid var(--border-default)',
+                    borderRadius:'var(--r-md)', boxShadow:'var(--shadow-lg)',
+                    maxHeight:200, overflowY:'auto', marginTop:2,
+                  }}>
+                    {filtered.slice(0, 50).map(item => (
+                      <div
+                        key={item.trams_rakeid}
+                        onMouseDown={e => { e.preventDefault(); setTramsInput(item.trams_rakeid); setTramsDropdownOpen(false) }}
+                        style={{
+                          padding:'8px 12px', cursor:'pointer', fontSize:12.5,
+                          fontFamily:'var(--font-mono)', fontWeight:600,
+                          background: tramsInput === item.trams_rakeid ? 'var(--navy-50)' : 'transparent',
+                          color:'var(--text-primary)',
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--navy-50)'}
+                        onMouseLeave={e => e.currentTarget.style.background = tramsInput === item.trams_rakeid ? 'var(--navy-50)' : 'transparent'}
+                      >
+                        <span>{item.trams_rakeid}</span>
+                        <span style={{ marginLeft:8, fontSize:11.5, fontWeight:400, color:'var(--navy-20)' }}>{item.dest_cd}</span>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })()}
+            </div>
+            <div style={{ fontSize:12, color:'var(--text-muted)' }}>
+              Rake ID: <strong style={{ fontFamily:'var(--font-mono)' }}>{tramsModal?.rakeId}</strong>
+            </div>
+          </div>
+        </Modal>
       </div>
     </AppShell>
   )
