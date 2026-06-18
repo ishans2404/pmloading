@@ -18,7 +18,7 @@ export function exportSessionJson(session) {
   const url  = URL.createObjectURL(blob)
   const a    = document.createElement('a')
   a.href     = url
-  a.download = `BSP_Loading_${reportLabel}_${session.rakeId}_${formatDateForFile(new Date())}.json`
+  a.download = `PM_Loading_${reportLabel}_${session.rakeId}_${formatDateForFile(new Date())}.json`
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -497,7 +497,7 @@ export async function generateLoadingPdf(session, reportMode) {
   }
 
   const reportLabel = isCompletionReport ? 'Completion' : 'Progress'
-  doc.save(`BSP_Plate_Loading_${reportLabel}_${session.rakeId}_${formatDateForFile(new Date())}.pdf`)
+  doc.save(`PM_Plate_Loading_${reportLabel}_${session.rakeId}_${formatDateForFile(new Date())}.pdf`)
 }
 
 export async function generateProgressReport(session) {
@@ -825,7 +825,7 @@ export async function generateProgressReport(session) {
     doc.text(`Generated: ${formatDateTimeFull(new Date())}`, PW - M, PH - 2.5, { align: 'right' })
   }
 
-  doc.save(`BSP_Plate_Loading_Progress_${session.rakeId}_${formatDateForFile(new Date())}.pdf`)
+  doc.save(`PM_Plate_Loading_Progress_${session.rakeId}_${formatDateForFile(new Date())}.pdf`)
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -925,6 +925,9 @@ export async function generateReportHomepage(rakeId, loadedData) {
   const PH  = doc.internal.pageSize.getHeight()
   const M   = 12
 
+  // Extract TRAMS ID from first row that has it
+  const tramsId = loadedData.find(r => r.RAKEID_TRAMS)?.RAKEID_TRAMS || null
+
   // Group by destination → consignee → plates
   const destMap = {}
   for (const row of loadedData) {
@@ -959,90 +962,115 @@ export async function generateReportHomepage(rakeId, loadedData) {
   const uniqueCons   = new Set(loadedData.map(r => String(r.DISPATCH_CD || '').trim()).filter(Boolean))
   const destString   = allDests.map(d => `${d.destName} (${d.destCode})`).filter(s => s.trim() !== '()').join(' · ') || '—'
 
+  // ── Header (drawn on every page) ────────────────────────────────
   function drawPageHeader() {
     doc.setFillColor(15, 31, 61)
-    doc.rect(0, 0, PW, 14, 'F')
+    doc.rect(0, 0, PW, 16, 'F')
     doc.setFillColor(234, 107, 26)
-    doc.rect(0, 14, PW, 1, 'F')
+    doc.rect(0, 16, PW, 1.2, 'F')
+
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
+    doc.setFontSize(9.5)
     doc.setTextColor(255, 255, 255)
-    doc.text('BHILAI STEEL PLANT  —  PLATE MILL LOADED PLATES REPORT', M, 6)
+    doc.text('BHILAI STEEL PLANT  —  PLATE MILL LOADED PLATES REPORT', M, 7.5)
+
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6)
-    doc.setTextColor(170, 195, 230)
-    doc.text('STEEL AUTHORITY OF INDIA LIMITED  |  FOR INTERNAL USE ONLY', M, 11)
+    doc.setTextColor(155, 185, 225)
+    doc.text('STEEL AUTHORITY OF INDIA LIMITED  |  FOR INTERNAL USE ONLY', M, 13)
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(6.5)
+    doc.setTextColor(195, 215, 245)
+    doc.text(`Rake: ${rakeId}${tramsId ? `  |  TRAMS: ${tramsId}` : ''}`, PW - M, 8, { align: 'right' })
   }
 
+  // ── Page 1 ──────────────────────────────────────────────────────
   drawPageHeader()
-  let y = 18
+  let y = 21
 
-  // Info block
-  const infoBlockH = 20
-  doc.setFillColor(239, 245, 253)
-  doc.setDrawColor(200, 215, 235)
-  doc.setLineWidth(0.25)
-  doc.rect(M, y, PW - M * 2, infoBlockH, 'FD')
-
-  const half = (PW - M * 2) / 2
+  // Info block — RAKE ID | DESTINATION | TRAMS ID | TOTAL PLATES
   const infoItems = [
-    ['RAKE ID',      String(rakeId)],
-    ['DESTINATION',  destString],
-    ['REPORT DATE',  formatDateTimeFull(new Date().toISOString())],
-    ['TOTAL PLATES', String(totalPlates)],
+    { label: 'RAKE ID',      value: String(rakeId),         large: true  },
+    { label: 'DESTINATION',  value: destString,             large: false },
+    { label: 'TRAMS ID',     value: tramsId || '—',         large: true  },
+    { label: 'TOTAL PLATES', value: String(totalPlates),    large: true  },
   ]
-  infoItems.forEach(([label, value], i) => {
-    const col = i % 2
-    const row = Math.floor(i / 2)
-    const x   = M + col * half + 4
-    const iy  = y + 4 + row * 8.5
+  const infoBlockH = 19
+  const infoColW   = (PW - M * 2) / infoItems.length
+
+  doc.setFillColor(240, 246, 255)
+  doc.setDrawColor(190, 212, 240)
+  doc.setLineWidth(0.3)
+  doc.roundedRect(M, y, PW - M * 2, infoBlockH, 1.5, 1.5, 'FD')
+
+  // Vertical dividers
+  doc.setDrawColor(210, 228, 248)
+  doc.setLineWidth(0.2)
+  for (let i = 1; i < infoItems.length; i++) {
+    const sx = M + i * infoColW
+    doc.line(sx, y + 3, sx, y + infoBlockH - 3)
+  }
+
+  infoItems.forEach(({ label, value, large }, i) => {
+    const x = M + i * infoColW + 4
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(6)
-    doc.setTextColor(80, 110, 155)
-    doc.text(label, x, iy)
+    doc.setFontSize(5.8)
+    doc.setTextColor(88, 118, 165)
+    doc.text(label, x, y + 6.5)
+
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.setTextColor(15, 31, 61)
-    doc.text(String(value), x, iy + 4.5, { maxWidth: half - 8 })
+    doc.setFontSize(large ? 9 : 7.5)
+    doc.setTextColor(12, 28, 58)
+    doc.text(String(value), x, y + 15, { maxWidth: infoColW - 7 })
   })
-  y += infoBlockH + 3
+  y += infoBlockH + 4
 
   // Summary tiles
   const tiles = [
-    { label: 'CONSIGNEES',    value: uniqueCons.size,               fg: [21, 43, 82],   bg: [240, 245, 255] },
-    { label: 'WAGONS',        value: uniqueWagons.size,             fg: [21, 43, 82],   bg: [240, 245, 255] },
-    { label: 'LOADED PLATES', value: totalPlates,                   fg: [21, 128, 61],  bg: [240, 253, 244] },
-    { label: 'WEIGHT (T)',    value: Number(totalWeight.toFixed(1)), fg: [234, 107, 26], bg: [255, 247, 235] },
+    { label: 'CONSIGNEES',    value: uniqueCons.size,                fg: [21, 43, 82],   bg: [236, 244, 255], br: [175, 205, 240] },
+    { label: 'WAGONS',        value: uniqueWagons.size,              fg: [21, 43, 82],   bg: [236, 244, 255], br: [175, 205, 240] },
+    { label: 'PLATES LOADED', value: totalPlates,                    fg: [14, 100, 48],  bg: [236, 252, 241], br: [150, 218, 178] },
+    { label: 'TOTAL WT. (T)', value: Number(totalWeight.toFixed(2)), fg: [162, 72, 8],   bg: [255, 246, 232], br: [242, 190, 135] },
   ]
   const tileW = (PW - M * 2) / tiles.length
-  const tileH = 12
+  const tileH = 14
   tiles.forEach((t, i) => {
     const x = M + i * tileW
     doc.setFillColor(...t.bg)
-    doc.setDrawColor(210, 220, 235)
-    doc.setLineWidth(0.25)
+    doc.setDrawColor(...t.br)
+    doc.setLineWidth(0.3)
     doc.rect(x, y, tileW, tileH, 'FD')
+    // Top colour bar
+    doc.setFillColor(...t.fg)
+    doc.rect(x, y, tileW, 1.8, 'F')
+
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(5.5)
-    doc.setTextColor(100, 120, 155)
-    doc.text(t.label, x + tileW / 2, y + 4.5, { align: 'center' })
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(11)
-    doc.setTextColor(...t.fg)
-    doc.text(String(t.value), x + tileW / 2, y + 10, { align: 'center' })
-  })
-  y += tileH + 4
+    doc.setTextColor(95, 115, 150)
+    doc.text(t.label, x + tileW / 2, y + 7.5, { align: 'center' })
 
-  // Per-destination → per-consignee tables
-  for (const dest of allDests) {
-    if (y > PH - 40) { doc.addPage(); drawPageHeader(); y = 18 }
-    doc.setFillColor(15, 31, 61)
-    doc.rect(M, y, PW - M * 2, 6, 'F')
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(7)
+    doc.setFontSize(13)
+    doc.setTextColor(...t.fg)
+    doc.text(String(t.value), x + tileW / 2, y + 13, { align: 'center' })
+  })
+  y += tileH + 5
+
+  // ── Per-destination sections ─────────────────────────────────────
+  for (const dest of allDests) {
+    if (y > PH - 48) { doc.addPage(); drawPageHeader(); y = 21 }
+
+    // Destination banner
+    doc.setFillColor(21, 43, 82)
+    doc.rect(M, y, PW - M * 2, 7, 'F')
+    doc.setFillColor(234, 107, 26)
+    doc.rect(M, y + 7, PW - M * 2, 0.8, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(7.5)
     doc.setTextColor(255, 255, 255)
-    doc.text(`DESTINATION: ${dest.destName || '—'}  (${dest.destCode || '—'})`, M + 3, y + 4.2)
-    y += 7
+    doc.text(`DESTINATION: ${dest.destName || '—'}  (${dest.destCode || '—'})`, M + 4, y + 4.8)
+    y += 9
 
     for (const cons of Object.values(dest.consignees)) {
       if (!cons.plates.length) continue
@@ -1060,22 +1088,30 @@ export async function generateReportHomepage(rakeId, loadedData) {
 
       const groupedRows = []
       let currentWagonLabel = null
-      let plateSerial = 0
+      let plateSerial = 0  // reset per wagon
 
       sortedPlates.forEach(p => {
-        const wagonLabel = (p.wagonNo || '').trim() || 'Unassigned'
+        const wagonNo    = (p.wagonNo || '').trim()
+        const wagonLabel = wagonNo || 'Unassigned'
+
         if (wagonLabel !== currentWagonLabel) {
+          plateSerial = 0  // restart numbering for each wagon
           groupedRows.push([{
-            content: wagonLabel !== 'Unassigned' ? `Wagon No.:  ${wagonLabel}` : 'Wagon No.:  Unassigned',
+            content: wagonNo ? `Wagon No.: ${wagonLabel}` : 'Wagon No.: Unassigned',
             colSpan: 9,
             styles: {
-              fillColor: [226, 232, 240], textColor: [30, 42, 68], fontStyle: 'bold', fontSize: 6.8,
-              cellPadding: { top: 1.8, bottom: 1.8, left: 4, right: 4 },
-              lineWidth: { top: 0.3, bottom: 0.3 }, lineColor: [160, 175, 200],
+              fillColor: [226, 235, 248],
+              textColor: [18, 40, 80],
+              fontStyle: 'bold',
+              fontSize: 7,
+              cellPadding: { top: 2.2, bottom: 2.2, left: 4, right: 4 },
+              lineWidth: { top: 0.3, bottom: 0.3 },
+              lineColor: [165, 190, 225],
             },
           }])
           currentWagonLabel = wagonLabel
         }
+
         plateSerial += 1
         groupedRows.push([
           plateSerial,
@@ -1090,70 +1126,81 @@ export async function generateReportHomepage(rakeId, loadedData) {
         ])
       })
 
-      if (y > PH - 35) { doc.addPage(); drawPageHeader(); y = 18 }
+      if (y > PH - 40) { doc.addPage(); drawPageHeader(); y = 21 }
+
+      const totalConsWeight = cons.plates.reduce((s, p) => s + (p.pcWgt ? parseFloat(p.pcWgt) : 0), 0)
 
       autoTable(doc, {
         startY: y,
         head: [
           [{ content: `${cons.consCode || '—'}  —  ${cons.consName || '—'}`, colSpan: 9,
-             styles: { fillColor: [21, 43, 82], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8, cellPadding: { top: 3, bottom: 3, left: 4, right: 4 } } }],
-          [{ content: `Wagon(s): ${wagonsForCons.join(', ') || 'N/A'}   |   Plates: ${cons.plates.length}`, colSpan: 9,
-             styles: { fillColor: [37, 65, 120], textColor: [185, 210, 255], fontStyle: 'normal', fontSize: 6.5, cellPadding: { top: 1.8, bottom: 1.8, left: 4, right: 4 } } }],
+             styles: { fillColor: [15, 31, 61], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5,
+                       cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 } } }],
+          [{ content: `Wagon(s): ${wagonsForCons.join(', ') || 'N/A'}   |   Plates: ${cons.plates.length}   |   Weight: ${totalConsWeight.toFixed(2)} T`,
+             colSpan: 9,
+             styles: { fillColor: [34, 62, 116], textColor: [185, 210, 255], fontStyle: 'normal', fontSize: 6.5,
+                       cellPadding: { top: 2, bottom: 2, left: 4, right: 4 } } }],
           ['Sl.', 'Plate No.', 'Heat No.', 'Grade', 'Size (mm)', 'Wt. (T)', 'TDC', 'Order No.', 'Status'],
         ],
         body: groupedRows,
-        headStyles: { fillColor: [21, 43, 82], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.8 },
+        headStyles: { fillColor: [27, 56, 101], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.8 },
         didParseCell(data) {
           if (data.section === 'head' && data.row.index === 2) {
-            data.cell.styles.fillColor   = [27, 56, 101]
+            data.cell.styles.fillColor   = [30, 60, 112]
             data.cell.styles.fontSize    = 6.5
-            data.cell.styles.cellPadding = { top: 2, bottom: 2, left: 2, right: 2 }
+            data.cell.styles.cellPadding = { top: 2.5, bottom: 2.5, left: 2.5, right: 2 }
+          }
+          if (data.section === 'body' && data.column.index === 0) {
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.textColor = [45, 65, 100]
           }
           if (data.section === 'body' && data.column.index === 8 && data.cell.text?.[0]) {
             const s = String(data.cell.text[0]).toUpperCase()
             if (s.includes('DA CREATED')) {
-              data.cell.styles.textColor = [21, 128, 61]
+              data.cell.styles.textColor = [14, 100, 48]
               data.cell.styles.fontStyle = 'bold'
             } else if (s.includes('LOADING STARTED')) {
-              data.cell.styles.textColor = [234, 107, 26]
+              data.cell.styles.textColor = [182, 78, 8]
               data.cell.styles.fontStyle = 'bold'
             }
           }
         },
-        bodyStyles: { fontSize: 7, cellPadding: { top: 1.8, bottom: 1.8, left: 2, right: 2 } },
-        alternateRowStyles: { fillColor: [248, 250, 252] },
+        bodyStyles: { fontSize: 7, cellPadding: { top: 1.8, bottom: 1.8, left: 2.5, right: 2 } },
+        alternateRowStyles: { fillColor: [249, 251, 255] },
         columnStyles: {
-          0: { cellWidth: 8,  halign: 'center' },
-          1: { cellWidth: 28 },
+          0: { cellWidth: 8,   halign: 'center' },
+          1: { cellWidth: 26 },
           2: { cellWidth: 20 },
-          3: { cellWidth: 22 },
-          4: { cellWidth: 28 },
-          5: { cellWidth: 16, halign: 'right' },
-          6: { cellWidth: 18 },
-          7: { cellWidth: 20 },
+          3: { cellWidth: 24 },
+          4: { cellWidth: 27 },
+          5: { cellWidth: 16,  halign: 'right' },
+          6: { cellWidth: 20 },
+          7: { cellWidth: 22 },
           8: { cellWidth: 'auto' },
         },
         theme: 'striped',
         margin: { left: M, right: M },
-        tableLineColor: [210, 220, 235],
-        tableLineWidth: 0.15,
+        tableLineColor: [200, 215, 235],
+        tableLineWidth: 0.2,
       })
-      y = doc.lastAutoTable.finalY + 4
+      y = doc.lastAutoTable.finalY + 5
     }
   }
 
-  // Wagon-wise summary page
+  // ── Wagon-wise summary page ──────────────────────────────────────
   doc.addPage()
   drawPageHeader()
-  y = 18
+  y = 21
 
-  doc.setFillColor(15, 31, 61)
-  doc.rect(M, y, PW - M * 2, 6, 'F')
+  doc.setFillColor(21, 43, 82)
+  doc.rect(M, y, PW - M * 2, 7, 'F')
+  doc.setFillColor(234, 107, 26)
+  doc.rect(M, y + 7, PW - M * 2, 0.8, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(7)
+  doc.setFontSize(7.5)
   doc.setTextColor(255, 255, 255)
-  doc.text('WAGON-WISE SUMMARY', M + 3, y + 4.2)
-  y += 8
+  doc.text('WAGON-WISE LOADING SUMMARY', M + 4, y + 4.8)
+  y += 10
 
   const wagonSumMap = {}
   for (const row of loadedData) {
@@ -1175,65 +1222,76 @@ export async function generateReportHomepage(rakeId, loadedData) {
 
   const wagonSumRows = Object.values(wagonSumMap)
     .sort((a, b) => a.wagonNo.localeCompare(b.wagonNo))
-    .map(w => [w.wagonNo, w.consCode, w.consName, w.destCode, w.plates, Number(w.weight.toFixed(3))])
+    .map((w, i) => [i + 1, w.wagonNo, w.consCode, w.consName, w.destCode, w.plates, Number(w.weight.toFixed(3))])
 
   autoTable(doc, {
     startY: y,
-    head: [['Wagon No.', 'Cons. Code', 'Consignee Name', 'Dest.', 'Plates', 'Wt. (T)']],
+    head: [['#', 'Wagon No.', 'Cons. Code', 'Consignee Name', 'Dest.', 'Plates', 'Wt. (T)']],
     body: wagonSumRows,
-    headStyles: { fillColor: [21, 43, 82], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold', cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 } },
-    bodyStyles: { fontSize: 7.5, cellPadding: { top: 2, bottom: 2, left: 3, right: 3 } },
-    columnStyles: {
-      0: { cellWidth: 36 },
-      1: { cellWidth: 24 },
-      2: { cellWidth: 'auto' },
-      3: { cellWidth: 20 },
-      4: { cellWidth: 20, halign: 'center', fontStyle: 'bold' },
-      5: { cellWidth: 22, halign: 'right' },
+    headStyles: { fillColor: [27, 56, 101], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold',
+                  cellPadding: { top: 3, bottom: 3, left: 3, right: 3 } },
+    bodyStyles: { fontSize: 7.5, cellPadding: { top: 2.5, bottom: 2.5, left: 3, right: 3 } },
+    didParseCell(data) {
+      if (data.section === 'body' && data.column.index === 0) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.textColor = [45, 65, 100]
+        data.cell.styles.halign    = 'center'
+      }
+      if (data.section === 'body' && data.column.index === 1) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.textColor = [15, 31, 61]
+      }
     },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 8  },
+      1: { cellWidth: 38 },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 'auto' },
+      4: { cellWidth: 18 },
+      5: { cellWidth: 18, halign: 'center', fontStyle: 'bold' },
+      6: { cellWidth: 22, halign: 'right' },
+    },
+    alternateRowStyles: { fillColor: [249, 251, 255] },
     theme: 'striped',
     margin: { left: M, right: M },
-    tableLineColor: [210, 220, 235],
-    tableLineWidth: 0.15,
+    tableLineColor: [200, 215, 235],
+    tableLineWidth: 0.2,
   })
 
-  y = doc.lastAutoTable.finalY + 16
-  if (y > PH - 42) { doc.addPage(); drawPageHeader(); y = 28 }
+  y = doc.lastAutoTable.finalY + 18
+  if (y > PH - 55) { doc.addPage(); drawPageHeader(); y = 30 }
 
   // Signature block
   const sigLabels = ['Prepared By (Operator)', 'Verified By (Supervisor)', 'Approved By (In-charge)']
   const sigW = (PW - M * 2) / 3
   sigLabels.forEach((label, i) => {
     const x = M + i * sigW
-    doc.setDrawColor(120, 135, 160)
-    doc.setLineWidth(0.35)
+    doc.setDrawColor(130, 150, 180)
+    doc.setLineWidth(0.4)
     doc.line(x + 6, y + 16, x + sigW - 6, y + 16)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6.5)
-    doc.setTextColor(100, 115, 140)
-    doc.text(label,                 x + sigW / 2, y + 20, { align: 'center' })
+    doc.setTextColor(100, 118, 148)
+    doc.text(label, x + sigW / 2, y + 20, { align: 'center' })
     doc.text('Date: _______________', x + sigW / 2, y + 25, { align: 'center' })
   })
 
-  // Page numbers + footer on every page
+  // Footer + page numbers (second pass — totalPages now known)
   const totalPages = doc.internal.getNumberOfPages()
   for (let p = 1; p <= totalPages; p++) {
     doc.setPage(p)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6.5)
-    doc.setTextColor(200, 215, 235)
-    doc.setFillColor(15, 31, 61)
-    doc.rect(PW - M - 28, 4, 30, 7, 'F')
-    doc.text(`Page ${p} of ${totalPages}`, PW - M, 9, { align: 'right' })
-    doc.setFillColor(230, 235, 242)
-    doc.rect(0, PH - 7, PW, 7, 'F')
+    doc.setFillColor(232, 237, 246)
+    doc.rect(0, PH - 8, PW, 8, 'F')
+    doc.setDrawColor(190, 208, 230)
+    doc.setLineWidth(0.3)
+    doc.line(0, PH - 8, PW, PH - 8)
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(6)
-    doc.setTextColor(80, 95, 120)
-    doc.text('Bhilai Steel Plant — Plate Mill Division, SAIL  |  This document is for internal use only', M, PH - 2.5)
-    doc.text(`Generated: ${formatDateTimeFull(new Date())}`, PW - M, PH - 2.5, { align: 'right' })
+    doc.setTextColor(82, 102, 132)
+    doc.text('Bhilai Steel Plant — Plate Mill Division, SAIL  |  For internal use only', M, PH - 3)
+    doc.text(`Generated: ${formatDateTimeFull(new Date().toISOString())}`, PW / 2, PH - 3, { align: 'center' })
+    doc.text(`Page ${p} of ${totalPages}`, PW - M, PH - 3, { align: 'right' })
   }
 
-  doc.save(`BSP_Loaded_Report_${rakeId}_${formatDateForFile(new Date())}.pdf`)
+  doc.save(`PM_Loaded_Report_${rakeId}_${formatDateForFile(new Date())}.pdf`)
 }

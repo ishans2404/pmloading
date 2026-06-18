@@ -125,6 +125,8 @@ export async function generateRakeId(dest1Code, dest2Code) {
     console.error('generateRakeId failed:', err.message)
     throw err
   }
+  
+  // return { "rakeId": 26061803 } // for testing without backend
 }
 
 export async function fetchRakeInfo(rakeId) {
