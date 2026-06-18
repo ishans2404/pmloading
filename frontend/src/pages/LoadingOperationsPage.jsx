@@ -850,8 +850,8 @@ export default function LoadingOperationsPage() {
     const q = upper.trim()
     if (!q || !activeCode || !session) return
 
-    // Only fire API search when input is at least 7 characters long
-    if (q.length < 7) return
+    // Only fire API search when input is at least 6 characters long
+    if (q.length < 6) return
 
     quickDebounceRef.current = setTimeout(async () => {
       const cons = session.consignees.find(c => c.consigneeCode === activeCode)

@@ -944,6 +944,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
     const tdc      = String(row.TDC || '').trim()
     const ordNo    = String(row.ORD_NO || '').trim()
     const status   = String(row.LOADING_STATUS || '').trim()
+    const type     = String(row.TYPE || '').trim()
 
     if (!plateNo && !consCode && !wagonNo) continue
     const dKey = destCode || 'UNKNOWN'
@@ -952,7 +953,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
     if (!destMap[dKey].consignees[cKey]) {
       destMap[dKey].consignees[cKey] = { consCode, consName, plates: [] }
     }
-    destMap[dKey].consignees[cKey].plates.push({ plateNo, heatNo, grade, ordSize, pcWgt, tdc, ordNo, wagonNo, status })
+    destMap[dKey].consignees[cKey].plates.push({ plateNo, heatNo, grade, ordSize, pcWgt, tdc, ordNo, wagonNo, status, type })
   }
 
   const allDests     = Object.values(destMap)
@@ -1034,7 +1035,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
     { label: 'TOTAL WT. (T)', value: Number(totalWeight.toFixed(2)), fg: [162, 72, 8],   bg: [255, 246, 232], br: [242, 190, 135] },
   ]
   const tileW = (PW - M * 2) / tiles.length
-  const tileH = 14
+  const tileH = 17
   tiles.forEach((t, i) => {
     const x = M + i * tileW
     doc.setFillColor(...t.bg)
@@ -1098,7 +1099,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
           plateSerial = 0  // restart numbering for each wagon
           groupedRows.push([{
             content: wagonNo ? `Wagon No.: ${wagonLabel}` : 'Wagon No.: Unassigned',
-            colSpan: 9,
+            colSpan: 10,
             styles: {
               fillColor: [226, 235, 248],
               textColor: [18, 40, 80],
@@ -1116,6 +1117,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
         groupedRows.push([
           plateSerial,
           p.plateNo  || '—',
+          p.type     || '—',
           p.heatNo   || '—',
           p.grade    || '—',
           p.ordSize  || '—',
@@ -1133,14 +1135,14 @@ export async function generateReportHomepage(rakeId, loadedData) {
       autoTable(doc, {
         startY: y,
         head: [
-          [{ content: `${cons.consCode || '—'}  —  ${cons.consName || '—'}`, colSpan: 9,
+          [{ content: `${cons.consCode || '—'}  —  ${cons.consName || '—'}`, colSpan: 10,
              styles: { fillColor: [15, 31, 61], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5,
                        cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 } } }],
           [{ content: `Wagon(s): ${wagonsForCons.join(', ') || 'N/A'}   |   Plates: ${cons.plates.length}   |   Weight: ${totalConsWeight.toFixed(2)} T`,
-             colSpan: 9,
+             colSpan: 10,
              styles: { fillColor: [34, 62, 116], textColor: [185, 210, 255], fontStyle: 'normal', fontSize: 6.5,
                        cellPadding: { top: 2, bottom: 2, left: 4, right: 4 } } }],
-          ['Sl.', 'Plate No.', 'Heat No.', 'Grade', 'Size (mm)', 'Wt. (T)', 'TDC', 'Order No.', 'Status'],
+          ['Sl.', 'Plate No.', 'Type', 'Heat No.', 'Grade', 'Size (mm)', 'Wt. (T)', 'TDC', 'Order No.', 'Status'],
         ],
         body: groupedRows,
         headStyles: { fillColor: [27, 56, 101], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.8 },
@@ -1154,7 +1156,22 @@ export async function generateReportHomepage(rakeId, loadedData) {
             data.cell.styles.fontStyle = 'bold'
             data.cell.styles.textColor = [45, 65, 100]
           }
-          if (data.section === 'body' && data.column.index === 8 && data.cell.text?.[0]) {
+          if (data.section === 'body' && data.column.index === 2 && data.cell.text?.[0]) {
+            const t = String(data.cell.text[0]).toUpperCase()
+            data.cell.styles.fontStyle = 'bold'
+            data.cell.styles.halign    = 'center'
+            const TYPE_COLORS = {
+              'OK':   [14,  100, 48],
+              'PGI':  [21,  43,  130],
+              'ZCMO': [60,  20,  120],
+              'RA':   [162, 72,  8],
+              'DIV':  [75,  85,  100],
+              'MTI':  [155, 55,  8],
+              'TPI':  [2,   110, 170],
+            }
+            data.cell.styles.textColor = TYPE_COLORS[t] || [55, 65, 80]
+          }
+          if (data.section === 'body' && data.column.index === 9 && data.cell.text?.[0]) {
             const s = String(data.cell.text[0]).toUpperCase()
             if (s.includes('DA CREATED')) {
               data.cell.styles.textColor = [14, 100, 48]
@@ -1168,15 +1185,16 @@ export async function generateReportHomepage(rakeId, loadedData) {
         bodyStyles: { fontSize: 7, cellPadding: { top: 1.8, bottom: 1.8, left: 2.5, right: 2 } },
         alternateRowStyles: { fillColor: [249, 251, 255] },
         columnStyles: {
-          0: { cellWidth: 8,   halign: 'center' },
-          1: { cellWidth: 26 },
-          2: { cellWidth: 20 },
-          3: { cellWidth: 24 },
-          4: { cellWidth: 27 },
-          5: { cellWidth: 16,  halign: 'right' },
-          6: { cellWidth: 20 },
-          7: { cellWidth: 22 },
-          8: { cellWidth: 'auto' },
+          0: { cellWidth: 7,   halign: 'center' },
+          1: { cellWidth: 20 },
+          2: { cellWidth: 13,  halign: 'center' },
+          3: { cellWidth: 16 },
+          4: { cellWidth: 26 },
+          5: { cellWidth: 24 },
+          6: { cellWidth: 14,  halign: 'right' },
+          7: { cellWidth: 24 },
+          8: { cellWidth: 20 },
+          9: { cellWidth: 'auto' },
         },
         theme: 'striped',
         margin: { left: M, right: M },
