@@ -25,6 +25,20 @@ export default defineConfig({
         background_color: '#eaecf0',
         display:          'standalone',
         orientation:      'any',
+        // Stable app identifier — prevents browsers from treating a
+        // start_url change as a new/different PWA.
+        id:               '/pmloading/',
+        // Default text direction for the app's language.
+        dir:              'ltr',
+        // App store / install-experience categories.
+        categories:       ['business', 'productivity'],
+        // Display-override sequence — the browser tries each in order
+        // before falling back to the `display` member.  window-controls-
+        // overlay lets us paint into the title‑bar area on desktop.
+        display_override: ['window-controls-overlay', 'standalone'],
+        // Single-instance behaviour: navigations to the PWA's scope focus
+        // the existing window instead of opening a new one.
+        launch_handler:   { client_mode: 'focus-existing' },
         // start_url and scope are resolved relative to base by the plugin.
         start_url:        '/pmloading/',
         scope:            '/pmloading/',
@@ -50,6 +64,34 @@ export default defineConfig({
             sizes:   '512x512',
             type:    'image/png',
             purpose: 'any',
+          },
+        ],
+        // Screenshots enable Chrome's "Rich Install UI", which shows
+        // screenshots and a description in the install dialog.
+        screenshots: [
+          {
+            // Desktop (landscape) — form_factor: 'wide' signals a
+            // layout meant for keyboard/mouse use.
+            src:          'screenshot-2560x1440.png',
+            sizes:        '2560x1440',
+            type:         'image/png',
+            form_factor:  'wide',
+            label:        'BSP Plate Mill Loading System — desktop view',
+          },
+          {
+            // Mobile (portrait) — leaving out form_factor defaults it to
+            // "narrow", which is what Chrome expects for phone screenshots.
+            src:          'screenshot-Pixel 7.png',
+            sizes:        '412x915',
+            type:         'image/png',
+            label:        'BSP Plate Mill Loading System — mobile view',
+          },
+          {
+            // Tablet (portrait).
+            src:          'screenshot-1600x2560.png',
+            sizes:        '1600x2560',
+            type:         'image/png',
+            label:        'BSP Plate Mill Loading System — tablet view',
           },
         ],
       },

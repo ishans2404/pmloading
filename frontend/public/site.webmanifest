@@ -3,29 +3,64 @@
   "short_name": "BSP Loading",
   "description": "Bhilai Steel Plant – Plate Mill Loading Operations",
   "start_url": "/pmloading/",
-  "scope": "/pmloading/",
   "display": "standalone",
-  "orientation": "any",
-  "theme_color": "#1b3865",
   "background_color": "#eaecf0",
+  "theme_color": "#1b3865",
+  "lang": "en",
+  "scope": "/pmloading/",
+  "orientation": "any",
+  "id": "/pmloading/",
+  "dir": "ltr",
+  "categories": [
+      "business",
+      "productivity"
+  ],
+  "display_override": [
+      "window-controls-overlay",
+      "standalone"
+  ],
+  "launch_handler": {
+      "client_mode": "focus-existing"
+  },
   "icons": [
     {
-      "src": "/pmloading/web-app-manifest-192x192.png",
+      "src": "web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/pmloading/web-app-manifest-512x512.png",
+      "src": "web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     },
     {
-      "src": "/pmloading/web-app-manifest-512x512.png",
+      "src": "web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    }
+],
+"screenshots": [
+    {
+      "src": "screenshot-2560x1440.png",
+      "sizes": "2560x1440",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "BSP Plate Mill Loading System — desktop view"
+    },
+    {
+      "src": "screenshot-Pixel 7.png",
+      "sizes": "412x915",
+      "type": "image/png",
+      "label": "BSP Plate Mill Loading System — mobile view"
+    },
+    {
+      "src": "screenshot-1600x2560.png",
+      "sizes": "1600x2560",
+      "type": "image/png",
+      "label": "BSP Plate Mill Loading System — tablet view"
     }
   ]
 }
