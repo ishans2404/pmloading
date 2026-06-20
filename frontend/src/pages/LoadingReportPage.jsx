@@ -439,7 +439,8 @@ export default function LoadingReportPage() {
           const ordCount = c._filteredOrders.length
           const totalBal_c = c._filteredOrders.reduce((s, o) => s + (o.bal || 0), 0)
           const noPlateExpanded = Boolean(noPlateExpandedByConsignee[c.consigneeCode])
-
+          
+          {/* developed by ishans2404@gmail.com */}
           const sortedOrders = [...c._filteredOrders].sort((o1, o2) => {
             const p1 = orderPlateStats[o1.ordNo || EMPTY_ORD_KEY] || emptyCounts
             const p2 = orderPlateStats[o2.ordNo || EMPTY_ORD_KEY] || emptyCounts
@@ -531,7 +532,6 @@ export default function LoadingReportPage() {
               </div>
 
               {/* ── Expanded: orders table ── */}
-              {/* developed by ishans2404@gmail.com */}
               {isOpen && (
                 <div>
                   <div className="table-wrapper">
@@ -546,9 +546,9 @@ export default function LoadingReportPage() {
                           <th style={{ textAlign: 'right' }}>Ord</th>
                           <th style={{ textAlign: 'right' }}>Desp</th>
                           <th style={{ textAlign: 'right' }}>Bal</th>
-                          <th style={{ textAlign: 'right' }}>TEST</th>
+                          <th style={{ textAlign: 'right' }}>OK</th>
                           <th style={{ textAlign: 'right' }}>NORM</th>
-                          <th style={{ textAlign: 'right' }}>FIN</th>
+                          <th style={{ textAlign: 'right' }}>APO</th>
                           <th style={{ textAlign: 'right' }}>RA</th>
                           <th style={{ textAlign: 'right' }}>TPI</th>
                           <th style={{ textAlign: 'right' }}>OK Plates</th>
