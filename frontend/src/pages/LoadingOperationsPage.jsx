@@ -189,6 +189,7 @@ export default function LoadingOperationsPage() {
   const [gradeFilter, setGradeFilter] = useState('')
   const [tdcFilter, setTdcFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
+  const [showLoaded, setShowLoaded] = useState(false)
   const [consigneeSearch, setConsigneeSearch] = useState('')
   const [wagonSearch, setWagonSearch]         = useState('')
   const [isFetchingPlate, setIsFetchingPlate] = useState(false)
@@ -1188,11 +1189,17 @@ export default function LoadingOperationsPage() {
 
   const activeConsignee = session?.consignees.find(c => c.consigneeCode === activeCode)
 
-  const filteredConsignees = (session?.consignees ?? []).filter(c => {
-    if (!consigneeSearch) return true
-    const q = consigneeSearch.toLowerCase()
-    return c.consigneeName.toLowerCase().includes(q) || c.consigneeCode.toLowerCase().includes(q)
-  })
+  const filteredConsignees = (session?.consignees ?? [])
+    .filter(c => {
+      if (!consigneeSearch) return true
+      const q = consigneeSearch.toLowerCase()
+      return c.consigneeName.toLowerCase().includes(q) || c.consigneeCode.toLowerCase().includes(q)
+    })
+    .sort((a, b) => {
+      const aCount = wagons.filter(w => w.consigneeCode === a.consigneeCode).length
+      const bCount = wagons.filter(w => w.consigneeCode === b.consigneeCode).length
+      return bCount - aCount
+    })
 
   const filteredWagons = wagons
     .filter(w => {
@@ -1244,6 +1251,7 @@ export default function LoadingOperationsPage() {
     .filter(p => !gradeFilter || p.grade === gradeFilter)
     .filter(p => !tdcFilter || p.tdc === tdcFilter)
     .filter(p => !typeFilter || p.plateType === typeFilter)
+    .filter(p => showLoaded || !p.loaded)
     .sort((a, b) => {
       // Primary sort: loaded status (loaded first)
       if (a.loaded !== b.loaded) {
@@ -1849,6 +1857,21 @@ export default function LoadingOperationsPage() {
                       <option value="MTI">MTI</option>
                       <option value="DIV">DIV</option>
                     </select>
+                    <label
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5,
+                        color: 'var(--text-secondary)', whiteSpace: 'nowrap', cursor: 'pointer',
+                        flex: '0 0 auto', userSelect: 'none',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={showLoaded}
+                        onChange={e => setShowLoaded(e.target.checked)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      Show Loaded
+                    </label>
                     {(plateFilter || gradeFilter || tdcFilter || typeFilter) && (
                       <button
                         className="btn btn-ghost btn-sm"

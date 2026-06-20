@@ -554,7 +554,6 @@ export default function LoadingReportPage() {
                           <th style={{ textAlign: 'right' }}>OK Plates</th>
                           <th style={{ textAlign: 'right' }}>Non-OK Mix</th>
                           <th>Remark</th>
-                          <th>Plate Info</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -575,7 +574,17 @@ export default function LoadingReportPage() {
                           return (
                             <tr
                               key={`${o.ordNo}-${i}`}
-                              style={startsGroup && i !== 0 ? { boxShadow: 'inset 0 2px 0 var(--navy-100)' } : undefined}
+                              onClick={() => hasInfo && setDetailsModal({
+                                consigneeCode: c.consigneeCode,
+                                consigneeName: c.consigneeName,
+                                order: o,
+                                orderCounts,
+                                orderPlates,
+                              })}
+                              style={{
+                                ...(startsGroup && i !== 0 ? { boxShadow: 'inset 0 2px 0 var(--navy-100)' } : {}),
+                                cursor: hasInfo ? 'pointer' : 'default',
+                              }}
                             >
                               <td className="td-mono" style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{o.ordNo}</td>
                               <td style={{ whiteSpace: 'nowrap' }}>
@@ -619,24 +628,6 @@ export default function LoadingReportPage() {
                               </td>
                               <td style={{ fontSize: 11, color: 'var(--amber-700)' }}>
                                 {[o.remark, o.ordPr].filter(Boolean).join(' · ') || '—'}
-                              </td>
-                              <td style={{ whiteSpace: 'nowrap' }}>
-                                {hasInfo ? (
-                                  <button
-                                    className="btn btn-ghost btn-sm"
-                                    onClick={() => setDetailsModal({
-                                      consigneeCode: c.consigneeCode,
-                                      consigneeName: c.consigneeName,
-                                      order: o,
-                                      orderCounts,
-                                      orderPlates,
-                                    })}
-                                  >
-                                    <InfoIcon size={13} /> View
-                                  </button>
-                                ) : (
-                                  <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>
-                                )}
                               </td>
                             </tr>
                           )
