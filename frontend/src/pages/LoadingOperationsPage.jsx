@@ -987,7 +987,6 @@ export default function LoadingOperationsPage() {
   }
 
   async function handlePlateDetail(p) {
-    if (plateDetail?.plateNo === p.plateNo) { setPlateDetail(null); return }
     setPlateDetail(p)
     try {
       const info = await fetchPlateInfo(p.plateNo)
@@ -2350,53 +2349,50 @@ export default function LoadingOperationsPage() {
         </div>
       )}
 
-      {plateDetail && (
-        <div style={{
-          position: 'fixed',
-          bottom: 80,
-          right: 20,
-          zIndex: 600,
-          background: 'var(--bg-surface)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--r-lg)',
-          boxShadow: 'var(--shadow-xl)',
-          padding: '14px 16px',
-          minWidth: 260,
-          maxWidth: 320,
-          animation: 'scaleIn 0.15s ease',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, fontSize: 13, color: 'var(--navy-700)' }}>{plateDetail.plateNo}</span>
-            {plateDetail.plateType !== 'OK' && (() => {
-              const cfg = PLATE_TYPE_CFG[plateDetail.plateType]
-              return <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 'var(--r-full)', background: cfg?.bg, color: cfg?.color, fontWeight: 700 }}>{cfg?.label}</span>
-            })()}
-            {!plateDetail._apiInfo && <span className="spinner spinner-sm" style={{ marginLeft: 'auto', marginRight: 6 }} />}
-            <button className="btn btn-ghost btn-icon btn-sm" style={{ marginLeft: plateDetail._apiInfo ? 'auto' : 0 }} onClick={() => setPlateDetail(null)}>×</button>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-            {[
-              ['Heat No.',    plateDetail._apiInfo?.HEAT_NO   || plateDetail.heatNo],
-              ['Grade',       plateDetail._apiInfo?.GRADE     || plateDetail.grade],
-              ['TDC',         plateDetail._apiInfo?.TDC       || plateDetail.tdc],
-              ['Colour',      plateDetail._apiInfo?.COLOUR_CD || plateDetail.colourCd],
-              ['Size',        plateDetail._apiInfo?.PLATE_SIZE || plateDetail.ordSize],
-              ['Weight',      (plateDetail._apiInfo?.WGT || plateDetail.pcWgt) ? `${plateDetail._apiInfo?.WGT || plateDetail.pcWgt} T` : null],
-              ['Order',       plateDetail._apiInfo?.ORD_NO    || plateDetail.ordNo],
-              ['Mech Result', plateDetail._apiInfo?.MECH_RESULT || null],
-              ['Loadable',    plateDetail._apiInfo?.LOADABLE  || null],
-              ['Next Job',    plateDetail._apiInfo?.NEXT_JOB  || null],
-              ['Consignee',   plateDetail._apiInfo?.CONSIGNEE_NM || null],
-            ].map(([label, val]) => val ? (
-              <div key={label} style={{ display: 'flex', gap: 8 }}>
-                <span style={{ color: 'var(--text-muted)', minWidth: 60 }}>{label}</span>
-                <span style={{ fontWeight: 500, fontFamily: ['Heat No.', 'Weight'].includes(label) ? 'var(--font-mono)' : 'inherit' }}>{val}</span>
+      <Modal
+        open={Boolean(plateDetail)}
+        onClose={() => setPlateDetail(null)}
+        title={plateDetail ? `Plate — ${plateDetail.plateNo}` : 'Plate Details'}
+        size="modal-sm"
+      >
+        {plateDetail && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {(plateDetail.plateType !== 'OK' || !plateDetail._apiInfo) && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                {plateDetail.plateType !== 'OK' && (() => {
+                  const cfg = PLATE_TYPE_CFG[plateDetail.plateType]
+                  return <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 'var(--r-full)', background: cfg?.bg, color: cfg?.color, fontWeight: 700 }}>{cfg?.label}</span>
+                })()}
+                {!plateDetail._apiInfo && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)' }}>
+                    <span className="spinner spinner-sm" /> Fetching details…
+                  </span>
+                )}
               </div>
-            ) : null)}
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {[
+                ['Heat No.',    plateDetail._apiInfo?.HEAT_NO   || plateDetail.heatNo],
+                ['Grade',       plateDetail._apiInfo?.GRADE     || plateDetail.grade],
+                ['TDC',         plateDetail._apiInfo?.TDC       || plateDetail.tdc],
+                ['Colour',      plateDetail._apiInfo?.COLOUR_CD || plateDetail.colourCd],
+                ['Size',        plateDetail._apiInfo?.PLATE_SIZE || plateDetail.ordSize],
+                ['Weight',      (plateDetail._apiInfo?.WGT || plateDetail.pcWgt) ? `${plateDetail._apiInfo?.WGT || plateDetail.pcWgt} T` : null],
+                ['Order',       plateDetail._apiInfo?.ORD_NO    || plateDetail.ordNo],
+                ['Mech Result', plateDetail._apiInfo?.MECH_RESULT || null],
+                ['Loadable',    plateDetail._apiInfo?.LOADABLE  || null],
+                ['Next Job',    plateDetail._apiInfo?.NEXT_JOB  || null],
+                ['Consignee',   plateDetail._apiInfo?.CONSIGNEE_NM || null],
+              ].map(([label, val]) => val ? (
+                <div key={label} style={{ display: 'flex', gap: 10, alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid var(--border-subtle)' }}>
+                  <span style={{ color: 'var(--text-muted)', minWidth: 88, fontSize: 12, flexShrink: 0 }}>{label}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13, fontFamily: ['Heat No.', 'Weight'].includes(label) ? 'var(--font-mono)' : 'inherit' }}>{val}</span>
+                </div>
+              ) : null)}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
       {/* developed by github.com/ishans2404 */}
       <Modal
         open={showCompleteModal}

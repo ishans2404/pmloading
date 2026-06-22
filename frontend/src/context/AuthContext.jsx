@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const stored = sessionStorage.getItem(AUTH_KEY)
+    const stored = localStorage.getItem(AUTH_KEY)
     if (stored) {
       try { setUser(JSON.parse(stored)) } catch { /* ignore */ }
     }
@@ -35,7 +35,7 @@ export function AuthProvider({ children }) {
     const result = await authStrategy.authenticate(username, password)
     if (result.ok) {
       setUser(result.user)
-      sessionStorage.setItem(AUTH_KEY, JSON.stringify(result.user))
+      localStorage.setItem(AUTH_KEY, JSON.stringify(result.user))
     }
     return result
   }
@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
   function logout() {
     authStrategy.logout()
     setUser(null)
-    sessionStorage.removeItem(AUTH_KEY)
+    localStorage.removeItem(AUTH_KEY)
   }
 
   return (

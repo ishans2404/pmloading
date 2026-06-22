@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { NavLink, useLocation } from 'react-router-dom'
+import PlateSearchWidget from '../shared/PlateSearchWidget.jsx'
 import { useAuth } from '../../context/AuthContext.jsx'
 
 const NAV_ITEMS = [
@@ -29,12 +30,23 @@ export default function AppShell({ children, pageTitle }) {
   const [collapsed, setCollapsed] = useState(!isHomePage)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [isOnline, setIsOnline] = useState(navigator.onLine)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef(null)
 
   // Close mobile sidebar on route change and reset collapsed state based on page
   useEffect(() => {
     setMobileOpen(false)
     setCollapsed(!isHomePage)
   }, [location.pathname, isHomePage])
+
+  useEffect(() => {
+    if (!userMenuOpen) return
+    function handleOutside(e) {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) setUserMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handleOutside)
+    return () => document.removeEventListener('mousedown', handleOutside)
+  }, [userMenuOpen])
 
   // Detect connectivity status
   useEffect(() => {
@@ -111,12 +123,6 @@ export default function AppShell({ children, pageTitle }) {
           ))}
         </nav>
 
-        <div className="sidebar-footer">
-          <button className="sidebar-nav-item" onClick={handleLogout} style={{width:'100%', border:'none',background:'none'}}>
-            <IconLogout size={16} />
-            {!collapsed && <span>Sign Out</span>}
-          </button>
-        </div>
       </aside>
 
       {/* Main area */}
@@ -144,15 +150,63 @@ export default function AppShell({ children, pageTitle }) {
           </div>
 
           <div className="topbar-actions">
+            <PlateSearchWidget />
             <div className="topbar-chip">
               <span className={`dot ${isOnline ? 'online' : 'offline'}`} />
               System {isOnline ? 'Online' : 'Offline'}
             </div>
-            <div className="topbar-user-btn">
-              <div className="topbar-avatar">
-                {(user?.displayName || user?.username || 'A')[0].toUpperCase()}
-              </div>
-              <span>{user?.displayName || user?.username}</span>
+            <div ref={userMenuRef} style={{ position: 'relative' }}>
+              <button
+                className="topbar-user-btn"
+                onClick={() => setUserMenuOpen(o => !o)}
+                aria-label="User menu"
+                aria-expanded={userMenuOpen}
+              >
+                <div className="topbar-avatar">
+                  {(user?.displayName || user?.username || 'A')[0].toUpperCase()}
+                </div>
+                <span>{user?.displayName || user?.username}</span>
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ opacity: 0.55, marginLeft: 2, flexShrink: 0 }}>
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+              </button>
+              {userMenuOpen && (
+                <div style={{
+                  position: 'absolute', right: 0, top: 'calc(100% + 6px)',
+                  background: 'var(--bg-surface)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: 'var(--r-lg)',
+                  boxShadow: 'var(--shadow-lg)',
+                  minWidth: 186,
+                  zIndex: 500,
+                  overflow: 'hidden',
+                  animation: 'scaleIn 0.15s ease',
+                }}>
+                  <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {user?.displayName || user?.username}
+                    </div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 1 }}>Operator</div>
+                  </div>
+                  <button
+                    onClick={() => { setUserMenuOpen(false); handleLogout() }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8,
+                      width: '100%', padding: '10px 14px',
+                      background: 'none', border: 'none',
+                      cursor: 'pointer', fontSize: 13,
+                      color: 'var(--red-600)',
+                      transition: 'background 0.15s',
+                      fontFamily: 'inherit',
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--red-50)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                  >
+                    <IconLogout size={14} />
+                    Sign Out
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </header>
