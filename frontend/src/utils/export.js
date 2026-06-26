@@ -137,6 +137,7 @@ export function buildSubmitPayload(session) {
 }
 
 // ── PDF Report ───────────────────────────────────────────────────
+// deprecated: use generateReportHomepage() instead
 export async function generateLoadingPdf(session, reportMode) {
   const { default: jsPDF }     = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
@@ -500,6 +501,7 @@ export async function generateLoadingPdf(session, reportMode) {
   doc.save(`PM_Plate_Loading_${reportLabel}_${session.rakeId}_${formatDateForFile(new Date())}.pdf`)
 }
 
+// deprecated: use generateReportHomepage() instead
 export async function generateProgressReport(session) {
   const { default: jsPDF }     = await import('jspdf')
   const { default: autoTable } = await import('jspdf-autotable')
@@ -928,13 +930,28 @@ export async function generateReportHomepage(rakeId, loadedData) {
   // Extract TRAMS ID from first row that has it
   const tramsId = loadedData.find(r => r.RAKEID_TRAMS)?.RAKEID_TRAMS || null
 
+  // Extract rake-level destination info from the first row (may have one or two destinations)
+  const firstRow      = loadedData[0] || {}
+  const rakeDestCd1   = String(firstRow.DEST_CD1 || '').trim()
+  const rakeDestNm1   = String(firstRow.DEST_NM1 || '').trim()
+  const rakeDestCd2   = String(firstRow.DEST_CD2 || '').trim()
+  const rakeDestNm2   = String(firstRow.DEST_NM2 || '').trim()
+  const hasTwoDestinations = Boolean(rakeDestCd1 && rakeDestCd2)
+
   // Group by destination → consignee → plates
   const destMap = {}
   for (const row of loadedData) {
-    const destCode = String(row.WAGON_DEST_CD || row.DEST_CD1 || '').trim()
-    const destName = String(row.DEST_NM1 || '').trim()
+    const wDestCd = String(row.WAGON_DEST_CD || row.DEST_CD1 || '').trim()
+    // Resolve destination name based on which DEST_CD matches WAGON_DEST_CD
+    let destName
+    if (wDestCd && wDestCd === String(row.DEST_CD2 || '').trim()) {
+      destName = String(row.DEST_NM2 || row.DEST_NM1 || '').trim()
+    } else {
+      destName = String(row.DEST_NM1 || '').trim()
+    }
+    const destCode = wDestCd
     const consCode = String(row.DISPATCH_CD || '').trim()
-    const consName = String(row.CUST_NM || '').trim()
+    const consName = String(row.CONSIGNEE_NM || '').trim()
     const wagonNo  = String(row.DISPATCH_NM || '').trim()
     const plateNo  = String(row.CHILD_PLATE_NO || '').trim()
     const heatNo   = String(row.HEAT_NO || '').trim()
@@ -945,6 +962,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
     const ordNo    = String(row.ORD_NO || '').trim()
     const status   = String(row.LOADING_STATUS || '').trim()
     const type     = String(row.TYPE || '').trim()
+    const nextJob  = String(row.NEXT_JOB || '').trim()
 
     if (!plateNo && !consCode && !wagonNo) continue
     const dKey = destCode || 'UNKNOWN'
@@ -953,7 +971,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
     if (!destMap[dKey].consignees[cKey]) {
       destMap[dKey].consignees[cKey] = { consCode, consName, plates: [] }
     }
-    destMap[dKey].consignees[cKey].plates.push({ plateNo, heatNo, grade, ordSize, pcWgt, tdc, ordNo, wagonNo, status, type })
+    destMap[dKey].consignees[cKey].plates.push({ plateNo, heatNo, grade, ordSize, pcWgt, tdc, ordNo, wagonNo, status, type, nextJob })
   }
 
   const allDests     = Object.values(destMap)
@@ -961,7 +979,15 @@ export async function generateReportHomepage(rakeId, loadedData) {
   const totalWeight  = loadedData.reduce((s, r) => s + (r.PC_WGT != null ? parseFloat(r.PC_WGT) : 0), 0)
   const uniqueWagons = new Set(loadedData.map(r => String(r.DISPATCH_NM || '').trim()).filter(Boolean))
   const uniqueCons   = new Set(loadedData.map(r => String(r.DISPATCH_CD || '').trim()).filter(Boolean))
-  const destString   = allDests.map(d => `${d.destName} (${d.destCode})`).filter(s => s.trim() !== '()').join(' · ') || '—'
+  // Show rake-level destinations in header (both dest1 and dest2 if present)
+  const destParts = []
+  if (rakeDestCd1) {
+    destParts.push(`${rakeDestNm1 || rakeDestCd1} (${rakeDestCd1})`)
+  }
+  if (rakeDestCd2) {
+    destParts.push(`${rakeDestNm2 || rakeDestCd2} (${rakeDestCd2})`)
+  }
+  const destString = destParts.length ? destParts.join(' · ') : '—'
 
   // ── Header (drawn on every page) ────────────────────────────────
   function drawPageHeader() {
@@ -993,11 +1019,11 @@ export async function generateReportHomepage(rakeId, loadedData) {
   // Info block — RAKE ID | DESTINATION | TRAMS ID | TOTAL PLATES
   const infoItems = [
     { label: 'RAKE ID',      value: String(rakeId),         large: true  },
-    { label: 'DESTINATION',  value: destString,             large: false },
+    { label: 'DESTINATION',  value: destString,             large: !hasTwoDestinations },
     { label: 'TRAMS ID',     value: tramsId || '—',         large: true  },
     { label: 'TOTAL PLATES', value: String(totalPlates),    large: true  },
   ]
-  const infoBlockH = 19
+  const infoBlockH = hasTwoDestinations ? 24 : 19
   const infoColW   = (PW - M * 2) / infoItems.length
 
   doc.setFillColor(240, 246, 255)
@@ -1020,10 +1046,12 @@ export async function generateReportHomepage(rakeId, loadedData) {
     doc.setTextColor(88, 118, 165)
     doc.text(label, x, y + 6.5)
 
+    const valFontSize = large ? 9 : (hasTwoDestinations ? 6.5 : 7.5)
     doc.setFont('helvetica', 'bold')
-    doc.setFontSize(large ? 9 : 7.5)
+    doc.setFontSize(valFontSize)
     doc.setTextColor(12, 28, 58)
-    doc.text(String(value), x, y + 15, { maxWidth: infoColW - 7 })
+    const valY = hasTwoDestinations ? 12 : 15
+    doc.text(String(value), x, y + valY, { maxWidth: infoColW - 7 })
   })
   y += infoBlockH + 4
 
@@ -1099,7 +1127,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
           plateSerial = 0  // restart numbering for each wagon
           groupedRows.push([{
             content: wagonNo ? `Wagon No.: ${wagonLabel}` : 'Wagon No.: Unassigned',
-            colSpan: 10,
+            colSpan: 11,
             styles: {
               fillColor: [226, 235, 248],
               textColor: [18, 40, 80],
@@ -1124,6 +1152,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
           p.pcWgt != null ? Number(p.pcWgt).toFixed(3) : '—',
           p.tdc      || '—',
           p.ordNo    || '—',
+          p.nextJob  || '—',
           p.status   || '—',
         ])
       })
@@ -1135,14 +1164,14 @@ export async function generateReportHomepage(rakeId, loadedData) {
       autoTable(doc, {
         startY: y,
         head: [
-          [{ content: `${cons.consCode || '—'}  —  ${cons.consName || '—'}`, colSpan: 10,
+          [{ content: `${cons.consCode || '—'}  —  ${cons.consName || '—'}`, colSpan: 11,
              styles: { fillColor: [15, 31, 61], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 8.5,
                        cellPadding: { top: 3.5, bottom: 3.5, left: 4, right: 4 } } }],
           [{ content: `Wagon(s): ${wagonsForCons.join(', ') || 'N/A'}   |   Plates: ${cons.plates.length}   |   Weight: ${totalConsWeight.toFixed(2)} T`,
-             colSpan: 10,
+             colSpan: 11,
              styles: { fillColor: [34, 62, 116], textColor: [185, 210, 255], fontStyle: 'normal', fontSize: 6.5,
                        cellPadding: { top: 2, bottom: 2, left: 4, right: 4 } } }],
-          ['Sl.', 'Plate No.', 'Type', 'Heat No.', 'Grade', 'Size (mm)', 'Wt. (T)', 'TDC', 'Order No.', 'Status'],
+          ['Sl.', 'Plate No.', 'Type', 'Heat No.', 'Grade', 'Size (mm)', 'Wt. (T)', 'TDC', 'Order No.', 'Next Job', 'Status'],
         ],
         body: groupedRows,
         headStyles: { fillColor: [27, 56, 101], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 6.8 },
@@ -1171,7 +1200,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
             }
             data.cell.styles.textColor = TYPE_COLORS[t] || [55, 65, 80]
           }
-          if (data.section === 'body' && data.column.index === 9 && data.cell.text?.[0]) {
+          if (data.section === 'body' && data.column.index === 10 && data.cell.text?.[0]) {
             const s = String(data.cell.text[0]).toUpperCase()
             if (s.includes('DA CREATED')) {
               data.cell.styles.textColor = [14, 100, 48]
@@ -1186,15 +1215,16 @@ export async function generateReportHomepage(rakeId, loadedData) {
         alternateRowStyles: { fillColor: [249, 251, 255] },
         columnStyles: {
           0: { cellWidth: 7,   halign: 'center' },
-          1: { cellWidth: 20 },
-          2: { cellWidth: 13,  halign: 'center' },
-          3: { cellWidth: 16 },
-          4: { cellWidth: 26 },
-          5: { cellWidth: 24 },
-          6: { cellWidth: 14,  halign: 'right' },
-          7: { cellWidth: 24 },
-          8: { cellWidth: 20 },
-          9: { cellWidth: 'auto' },
+          1: { cellWidth: 18 },
+          2: { cellWidth: 12,  halign: 'center' },
+          3: { cellWidth: 14 },
+          4: { cellWidth: 22 },
+          5: { cellWidth: 20 },
+          6: { cellWidth: 13,  halign: 'right' },
+          7: { cellWidth: 20 },
+          8: { cellWidth: 18 },
+          9: { cellWidth: 16, halign: 'center' },
+          10: { cellWidth: 'auto' },
         },
         theme: 'striped',
         margin: { left: M, right: M },
@@ -1228,7 +1258,7 @@ export async function generateReportHomepage(rakeId, loadedData) {
       wagonSumMap[wNo] = {
         wagonNo:  wNo,
         consCode: String(row.DISPATCH_CD || '').trim(),
-        consName: String(row.CUST_NM     || '').trim(),
+        consName: String(row.CONSIGNEE_NM || '').trim(),
         destCode: String(row.WAGON_DEST_CD || row.DEST_CD1 || '').trim(),
         plates:   0,
         weight:   0,
