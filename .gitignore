@@ -1,3 +1,5 @@
 venv/
 .venv/
 CHANGES.md
+.cline/
+latex-report/

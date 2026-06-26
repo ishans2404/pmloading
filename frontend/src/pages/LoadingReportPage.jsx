@@ -124,6 +124,7 @@ export default function LoadingReportPage() {
       return
     }
     fetchInProgressRef.current = true
+    const requestedDest = selectedDest
     toast.info({
       title: 'Fetch Started',
       message: `Loading report for ${destLabel(selectedDest)}...`,
@@ -132,6 +133,7 @@ export default function LoadingReportPage() {
     setLoading(true)
     try {
       const data = await fetchLoadingReport(selectedDest)
+      if (requestedDest !== selectedDest) return
       setConsignees(data)
       setFetched(true)
       setSearch('')
@@ -142,6 +144,7 @@ export default function LoadingReportPage() {
       setNoPlateExpandedByConsignee({})
       toast.success({ title: 'Data Loaded', message: `${data.length} consignees for ${destLabel(selectedDest)}` })
     } catch {
+      if (requestedDest !== selectedDest) return
       toast.error('Failed to fetch consignee data.')
     } finally {
       setLoading(false)
@@ -280,6 +283,8 @@ export default function LoadingReportPage() {
                     value={selectedDest}
                     onChange={e => {
                       setSelectedDest(e.target.value)
+                      setLoading(false)
+                      fetchInProgressRef.current = false
                       setFetched(false)
                       setConsignees([])
                       setGradeFilter('')

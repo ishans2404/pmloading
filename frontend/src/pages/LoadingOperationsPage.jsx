@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useLocation } from 'react-router-dom'
 import AppShell from '../components/layout/AppShell.jsx'
 import Modal from '../components/shared/Modal.jsx'
-import { fetchRakeInfo, fetchLoadingReport, fetchPlateInfo, fetchPlateInfoSearch, submitWagonLoad, fetchLoadedDetails, fetchWagonsByRake, publishBalUpdate, createBalUpdateStream, publishPlateLock, createPlateLockStream } from '../api/index.js'
-import { generateLoadingPdf, generateProgressReport, buildWagonPayloads, submitWagonRequests } from '../utils/export.js'
+import { fetchRakeInfo, fetchLoadingReport, fetchPlateInfo, fetchPlateInfoSearch, submitWagonLoad, fetchLoadedDetails, fetchWagonsByRake, publishBalUpdate, createBalUpdateStream, publishPlateLock, createPlateLockStream, fetchReportDetails } from '../api/index.js'
+import { generateReportHomepage, buildWagonPayloads, submitWagonRequests } from '../utils/export.js'
 import { useToast } from '../context/ToastContext.jsx'
 import { useAuth } from '../context/AuthContext.jsx'
 import { isCoarsePointer } from '../utils/device.js'
@@ -1168,22 +1168,50 @@ export default function LoadingOperationsPage() {
     })
   }
 
-  async function handleGenerateReport() {
+  function handleGenerateReport() {
+    toast.info({
+      title: 'Generating Report',
+      message: `Loading Report for Rake ${session.rakeId}`,
+      duration: 2200,
+    })
     setExporting(true)
-    try {
-      const allSessions = { ...sessions, [session.destination.code]: session }
-      await generateProgressReport({ ...session, allSessions, wagons })
-    } catch (e) { toast.error('PDF failed: ' + e.message) }
-    finally { setExporting(false) }
+    fetchReportDetails(session.rakeId)
+      .then(reportData => {
+        if (!Array.isArray(reportData) || reportData.length === 0) {
+          toast.warning('No report data found for this rake.')
+          return
+        }
+        return generateReportHomepage(session.rakeId, reportData)
+      })
+      .catch(err => {
+        toast.error('Failed to generate report: ' + (err?.message || 'Unknown error'))
+      })
+      .finally(() => {
+        setExporting(false)
+      })
   }
 
-  async function handleExportPdf() {
+  function handleExportPdf() {
+    toast.info({
+      title: 'Generating Report',
+      message: `Loading Report for Rake ${session.rakeId}`,
+      duration: 2200,
+    })
     setExporting(true)
-    try {
-      const allSessions = { ...sessions, [session.destination.code]: session }
-      await generateLoadingPdf({ ...session, allSessions, wagons }, step === 'COMPLETED' ? 'completion' : 'progress')
-    } catch (e) { toast.error('PDF failed: ' + e.message) }
-    finally { setExporting(false) }
+    fetchReportDetails(session.rakeId)
+      .then(reportData => {
+        if (!Array.isArray(reportData) || reportData.length === 0) {
+          toast.warning('No report data found for this rake.')
+          return
+        }
+        return generateReportHomepage(session.rakeId, reportData)
+      })
+      .catch(err => {
+        toast.error('Failed to generate report: ' + (err?.message || 'Unknown error'))
+      })
+      .finally(() => {
+        setExporting(false)
+      })
   }
 
   const activeConsignee = session?.consignees.find(c => c.consigneeCode === activeCode)
